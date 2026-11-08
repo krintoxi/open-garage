@@ -7,8 +7,12 @@ $pro = is_pro();
 $hasOwn = (bool)($veh['id'] ?? 0);
 $nav = array_values(array_filter($pro ? [
     ['jobs', 'Shop board', '▦'],
+    ['calendar', 'Appointments', '◷'],
     ['customers', 'Customers', '☺'],
+    ['clock', 'Time clock', '⏱'],
     ['diagnose', 'Diagnose codes', '⌁'],
+    ['purchasing', 'Parts ordering', '⇩'],
+    ['team', 'Team & payroll', '☷'],
     $hasOwn ? ['dashboard', 'Vehicle home', '◈'] : null,
     ['garage', 'Garage', '⌂'],
     ['shop', 'Shop settings', '⚙'],
@@ -36,7 +40,7 @@ $nav = array_values(array_filter(array_merge($nav, !$hasOwn ? [['tools', 'My too
     ['mileage', 'Mileage log', '⏱'],
     ['links', 'Links', '↗'],
     ['vehicle', 'Vehicle & settings', '▤'],
-])));
+], MULTI_USER && is_admin() && !is_guest() ? [['admin', 'Site admin', '⚿']] : [])));
 $primary = array_slice($nav, 0, 5); $more = array_slice($nav, 5);
 $allVehicles = vehicles();
 $openCount = (int)col("SELECT COUNT(*) FROM issues WHERE " . vw() . " AND status IN ('open','monitoring','scheduled')");
@@ -57,7 +61,7 @@ $f = flash();
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css?v=14">
+<link rel="stylesheet" href="assets/app.css?v=15">
 <?php if ($use3d || !empty($useStage)): ?>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <?php endif; ?>
@@ -118,17 +122,18 @@ $f = flash();
 <nav class="tabbar" aria-label="Main">
   <?php $tab = fn($p, $ico, $label, $on, $badge = 0) => '<a href="' . url($p) . '" class="' . ($on ? 'on' : '') . '"><span class="ti">' . $ico . ($badge ? '<i>' . $badge . '</i>' : '') . '</span>' . $label . '</a>'; ?>
   <?php $newReplies = $pro ? (int)col('SELECT COUNT(*) FROM jobs WHERE user_id=? AND seen_approval=0', [uid()]) : 0; ?>
+  <?php $newReq = $pro ? (int)col("SELECT COUNT(*) FROM appointments WHERE user_id=? AND status='requested' AND seen=0", [uid()]) : 0; ?>
   <?= $pro ? $tab('jobs', '▦', 'Shop', in_array($page, ['jobs', 'job'], true), $newReplies) : $tab('dashboard', '◈', 'Home', $page === 'dashboard') ?>
-  <?= $tab('diagnose', '⌁', 'Diagnose', in_array($page, ['diagnose', 'codes'], true)) ?>
+  <?= $pro ? $tab('calendar', '◷', 'Calendar', $page === 'calendar', $newReq) : $tab('diagnose', '⌁', 'Diagnose', in_array($page, ['diagnose', 'codes'], true)) ?>
   <button type="button" class="tab-add" data-sheet-open="quick" aria-label="Quick add"><span>＋</span></button>
-  <?= $pro ? $tab('customers', '☺', 'Customers', $page === 'customers') : $tab('maintenance', '⟳', 'Service', in_array($page, ['maintenance', 'visits', 'visit', 'visit_form'], true)) ?>
+  <?= $pro ? $tab('clock', '⏱', 'Clock', $page === 'clock') : $tab('maintenance', '⟳', 'Service', in_array($page, ['maintenance', 'visits', 'visit', 'visit_form'], true)) ?>
   <button type="button" class="<?= in_array($page, array_merge(array_column($more, 0), ['garage', 'vehicle']), true) ? 'on' : '' ?>" data-sheet-open="menu"><span class="ti">☰<?= $recallCount ? '<i>' . $recallCount . '</i>' : '' ?></span>Menu</button>
 </nav>
 <dialog class="sheet" id="sheet-quick" aria-label="Quick add">
   <div class="sheet-grip"></div>
   <h3>Quick add</h3>
   <div class="quick-grid">
-    <?php if ($pro): ?><a href="<?= url('jobs', ['new' => 1]) ?>"><span>▦</span>New estimate</a><a href="<?= url('customers', ['c' => 'new']) ?>#cform"><span>☺</span>New customer</a><?php endif; ?>
+    <?php if ($pro): ?><a href="<?= url('calendar', ['new' => 1]) ?>"><span>◷</span>New appointment</a><a href="<?= url('jobs', ['new' => 1]) ?>"><span>▦</span>New estimate</a><a href="<?= url('customers', ['c' => 'new']) ?>#cform"><span>☺</span>New customer</a><a href="<?= url('customers') ?>"><span>⌕</span>Find a customer</a><a href="<?= url('purchasing') ?>"><span>⇩</span>Order parts</a><?php endif; ?>
     <a href="<?= url('diagnose') ?>"><span>⌁</span>Enter / scan codes</a>
     <?php if ($hasOwn): ?>
     <a href="<?= url('issue_form') ?>"><span>⚠</span>Report a problem</a>
@@ -152,7 +157,7 @@ $f = flash();
     <a href="<?= url('garage') ?>#add" class="add">＋ Add</a>
   </div>
   <div class="menu-list">
-    <?php foreach (array_merge([['issues', 'Issues', '⚠'], ['garage', 'Garage', '⌂']], array_filter($more, fn($x) => $x[0] !== 'issues')) as [$p, $label, $ico]): ?>
+    <?php foreach ($pro ? array_merge([['diagnose', 'Diagnose codes', '⌁'], ['customers', 'Customers', '☺']], array_filter($more, fn($x) => !in_array($x[0], ['diagnose', 'customers'], true))) : array_merge([['issues', 'Issues', '⚠'], ['garage', 'Garage', '⌂']], array_filter($more, fn($x) => $x[0] !== 'issues')) as [$p, $label, $ico]): ?>
       <a href="<?= url($p) ?>" class="<?= $page === $p ? 'on' : '' ?>"><span><?= $ico ?></span><?= h($label) ?><?= $p === 'recalls' && $recallCount ? ' <i class="pill">' . $recallCount . '</i>' : '' ?><?= $p === 'issues' && $openCount ? ' <i class="pill">' . $openCount . '</i>' : '' ?></a>
     <?php endforeach; ?>
   </div>
@@ -170,7 +175,7 @@ $f = flash();
 </dialog>
 <?php endif; ?>
 <div id="lightbox" class="lightbox" hidden><img alt=""><button type="button" aria-label="Close">×</button></div>
-<script src="assets/app.js?v=7"></script>
+<script src="assets/app.js?v=8"></script>
 <?php if ($use3d): ?><script type="module" src="assets/car3d.js?v=9"></script><?php endif; ?>
 <?php if (!empty($useStage)): ?><script type="module" src="assets/showroom.js?v=4"></script><?php endif; ?>
 </body>

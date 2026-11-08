@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-garage-vision: image jobs for Open Garage (showroom cut-out + depth, and experimental single-photo 3D).
+garage-vision: image jobs for the Garage app (garage.edgeventure.uk and the public Open Garage instance).
 
   POST /showroom      body: a photo        -> JSON {cutout: base64 PNG (RGBA, cropped), depth: base64 PNG (grey)}
   POST /mesh/start    body: a photo/cutout -> JSON {job}         (single-photo 3D, experimental, ~1 min)
   GET  /mesh/status?job=ID                 -> JSON {status: queued|running|done|error|missing, progress}
   GET  /mesh/result?job=ID                 -> model/gltf-binary
   POST /read-scan     body: a photo of a scan tool screen -> JSON {text}   (codes + data lines, read by a local vision LLM)
+  POST /read-id?kind=vin|plate  body: a photo of a VIN (door sticker, windshield plate, registration) or a licence plate -> JSON {text}
   GET  /health                             -> JSON {ok, busy, gaming, queue}
 
-Binds to the machine's Tailscale address only (or loopback with --loopback),
+Same rules as edge-compute/animate-server.py: binds to the Tailscale address only (or loopback with --loopback),
 a shared token on every route (Authorization: Bearer ...), clamped inputs, one GPU job at a time, models load lazily
-and unload after IDLE_UNLOAD seconds, and a pause file (GARAGE_VISION_PAUSE_FILE, default
-~/.garage-vision-paused) refuses work and frees the models, e.g. while the machine is used for something else.
+and unload after IDLE_UNLOAD seconds so the Node 1 VM on this machine keeps its memory, and gaming mode
+(~/edge-compute/gaming-mode) refuses work and frees the models.
 
 Models (all open licences): BiRefNet-lite (MIT) for the cut-out, Depth Anything V2 Small (Apache-2.0)
 for depth, TripoSR (MIT) for 3D.
@@ -28,7 +29,7 @@ os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
 sys.path.insert(0, os.path.join(HERE, 'shims'))
 sys.path.insert(1, os.path.join(HERE, 'TripoSR'))
 
-GAMING_FLAG = os.path.expanduser(os.environ.get('GARAGE_VISION_PAUSE_FILE', '~/.garage-vision-paused'))
+GAMING_FLAG = os.path.expanduser('~/edge-compute/gaming-mode')
 JOBS = os.path.join(HERE, 'jobs')
 MAX_BODY = 25 * 1024 * 1024
 MAX_SIDE = 1600
@@ -37,8 +38,8 @@ GPU = threading.Lock()
 STATE = {'rembg': None, 'depth': None, 'tsr': None, 'last_used': 0.0, 'busy': False}
 MESH_Q = queue.Queue(maxsize=4)
 MESH = {}  # job -> {status, progress, created, path, error}
-# Single-photo 3D (TripoSR) needs several GB: it only starts when plenty of memory is free, and its model is dropped
-# straight after each job, so it can share a machine with other work.
+# This machine also hosts the Node 1 VM (every live site) and is used for gaming: single-photo 3D (TripoSR, several GB)
+# only starts when plenty of memory is free, and its model is dropped straight after each job.
 MESH_MIN_FREE_PCT = int(os.environ.get('GARAGE_VISION_MESH_MIN_FREE', '45'))
 # Reading scanner screenshots uses a local Ollama vision model (several GB while loaded; unloaded right after each read).
 OCR_MODEL = os.environ.get('GARAGE_VISION_OCR_MODEL', 'gemma4:12b')
@@ -48,6 +49,35 @@ OCR_PROMPT = ("This is a photo or screenshot of a car diagnostic scan tool or ph
               "First list every diagnostic trouble code exactly as shown (format like P0171, C0035, U0100), one per line, each followed by its description if shown. "
               "Then list every live-data or freeze-frame value shown as 'Name: value unit', one per line. "
               "Output only the transcription, no commentary. If there are no codes or values, output NONE.")
+
+
+ID_PROMPTS = {
+    'vin': ("Find the vehicle identification number (VIN) in this photo: on a door-jamb sticker, the plate under the windshield, a registration card, "
+            "a title, an insurance card or a frame stamping. A VIN is 17 characters, digits and capital letters, never I, O or Q. "
+            "Output each VIN you can read on its own line, exactly as printed, best reading first. Output only VINs. If there is none, output NONE."),
+    'plate': ("Read the vehicle licence (number) plate in this photo. Output exactly two lines: 'PLATE: <the characters, no spaces>' and "
+              "'REGION: <US state or country printed on the plate, or UNKNOWN>'. If there is no readable plate, output NONE."),
+}
+
+
+def ollama_read(img, prompt, num_predict):
+    import urllib.request
+    from PIL import Image
+    if img.width < 1100:
+        f = min(3.0, 1300 / img.width)
+        img = img.resize((int(img.width * f), int(img.height * f)), Image.LANCZOS)
+    buf = io.BytesIO(); img.save(buf, 'PNG')
+    req = {'model': OCR_MODEL, 'messages': [{'role': 'user', 'content': prompt, 'images': [base64.b64encode(buf.getvalue()).decode()]}], 'stream': False, 'think': False,
+           'keep_alive': 0, 'options': {'temperature': 0, 'num_ctx': 6144, 'num_predict': num_predict}}
+    r = urllib.request.Request(OCR_URL.rstrip('/') + '/api/chat', data=json.dumps(req).encode(), headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(r, timeout=110) as resp:
+        out = json.loads(resp.read().decode())
+    text = ((out.get('message') or {}).get('content') or '').strip()
+    return '' if text.upper() == 'NONE' else text[:4000]
+
+
+def read_id(data, kind):
+    return {'text': ollama_read(load_image(data).convert('RGB'), ID_PROMPTS[kind], 120)}
 
 
 def read_scan(data):
@@ -344,10 +374,25 @@ class Handler(BaseHTTPRequestHandler):
         if gaming_on():
             return self._send(503, {'error': 'gaming mode is on'})
         path = urlparse(self.path).path
-        if path not in ('/showroom', '/mesh/start', '/read-scan'):
+        if path not in ('/showroom', '/mesh/start', '/read-scan', '/read-id'):
             return self._send(404, {'error': 'no such route'})
         data = self._body()
         if data is None: return
+        if path == '/read-id':
+            kind = (parse_qs(urlparse(self.path).query).get('kind') or [''])[0]
+            if kind not in ID_PROMPTS:
+                return self._send(400, {'error': 'kind must be vin or plate'})
+            if free_memory_pct() < OCR_MIN_FREE_PCT:
+                return self._send(503, {'error': 'busy: not enough free memory right now'})
+            if not GPU.acquire(timeout=60):
+                return self._send(503, {'error': 'busy'})
+            try:
+                return self._send(200, read_id(data, kind))
+            except Exception as e:
+                print('read-id failed:', repr(e), flush=True)
+                return self._send(422, {'error': 'could not read that image'})
+            finally:
+                GPU.release()
         if path == '/read-scan':
             if free_memory_pct() < OCR_MIN_FREE_PCT:
                 return self._send(503, {'error': 'busy: not enough free memory right now'})

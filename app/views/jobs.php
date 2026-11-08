@@ -28,6 +28,18 @@ $customers = rows('SELECT id, name FROM customers WHERE user_id=? ORDER BY name'
   <div class="card"><div class="stat"><small>Effective labor rate</small><b><?= money($hours ? $labor / $hours : 0) ?></b><small><?= round($hours, 1) ?> hours billed · posted rate <?= money((float)$S['labor_rate']) ?></small></div></div>
   <div class="card"><div class="stat"><small>Owed to you</small><b><?= money($ar) ?></b><small>closing ratio <?= $sent ? round($won / $sent * 100) : 0 ?>% of estimates sent this month</small></div></div>
 </div>
+<?php $todayA = appts(today() . ' 00:00', date('Y-m-d', strtotime('+1 day')) . ' 00:00'); $todayA = array_values(array_filter($todayA, fn($x) => !in_array($x['status'], ['cancelled', 'no_show'], true)));
+  $onClock = rows('SELECT t.name, t.color, e.kind, e.job_id FROM time_entries e JOIN techs t ON t.id=e.tech_id WHERE e.user_id=? AND e.ended_at IS NULL ORDER BY e.kind DESC', [uid()]);
+  $nReq = (int)col("SELECT COUNT(*) FROM appointments WHERE user_id=? AND status='requested'", [uid()]); ?>
+<div class="card today-strip">
+  <div><h3>Today <a class="muted" href="<?= url('calendar') ?>" style="font-size:13px;font-weight:500">calendar →</a></h3>
+    <?php if (!$todayA): ?><p class="muted" style="margin:0;font-size:13.5px">No appointments today.</p><?php endif; ?>
+    <div class="today-list"><?php foreach ($todayA as $ta): ?><a href="<?= $ta['job_id'] ? url('job', ['id' => $ta['job_id']]) : url('calendar', ['a' => $ta['id']]) ?>" style="--tc:<?= h($ta['tcolor'] ?: '#5e667a') ?>"><b><?= h(date('g:i', strtotime((string)$ta['starts_at']))) ?></b> <?= h(appt_who($ta)) ?><small><?= h(appt_vehicle($ta)) ?><?= $ta['status'] === 'arrived' ? ' · here' : '' ?></small></a><?php endforeach; ?></div>
+    <?php if ($nReq): ?><a class="st st-open" href="<?= url('calendar') ?>"><?= $nReq ?> online request<?= $nReq === 1 ? '' : 's' ?> to answer</a><?php endif; ?></div>
+  <div><h3>On the clock <a class="muted" href="<?= url('clock') ?>" style="font-size:13px;font-weight:500">time clock →</a></h3>
+    <?php $seen = []; $any = false; foreach ($onClock as $oc): if (isset($seen[$oc['name']])) continue; $seen[$oc['name']] = 1; $any = true; ?><span class="clock-chip" style="--tc:<?= h($oc['color'] ?: '#5e667a') ?>"><?= h($oc['name']) ?><?= $oc['kind'] === 'job' ? ' · on ' . h((string)col('SELECT est_no FROM jobs WHERE id=?', [$oc['job_id']])) : ' · idle' ?></span><?php endforeach; ?>
+    <?php if (!$any): ?><p class="muted" style="margin:0;font-size:13.5px">Nobody clocked in.</p><?php endif; ?></div>
+</div>
 <details class="card new-ro" <?= isset($_GET['new']) ? 'open' : '' ?>><summary><b>＋ New estimate / repair order</b></summary>
   <form method="post" class="form-grid" style="margin-top:10px"><input type="hidden" name="action" value="job_new"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
     <div><label>Customer</label><select name="customer_id" data-cust-pick><option value="">— walk-in / none —</option><?php foreach ($customers as $cu): ?><option value="<?= (int)$cu['id'] ?>" <?= (int)($_GET['customer'] ?? 0) === (int)$cu['id'] ? 'selected' : '' ?>><?= h($cu['name']) ?></option><?php endforeach; ?></select><small><a href="<?= url('customers', ['c' => 'new']) ?>#cform">+ new customer</a></small></div>

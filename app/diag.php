@@ -17,7 +17,8 @@ function is_guest(): bool { return MULTI_USER && (bool)(current_user()['is_guest
 function account_wipe(int $userId): void {
     foreach (rows('SELECT id FROM vehicle WHERE user_id=?', [$userId]) as $dv) delete_vehicle((int)$dv['id']);
     foreach (['job_lines', 'job_payments', 'job_auth', 'job_inspect'] as $t) q("DELETE FROM $t WHERE job_id IN (SELECT id FROM jobs WHERE user_id=?)", [$userId]);
-    foreach (['mechanics', 'links', 'customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'shop_profile'] as $t) q("DELETE FROM $t WHERE user_id=?", [$userId]);
+    q('DELETE FROM po_lines WHERE po_id IN (SELECT id FROM purchase_orders WHERE user_id=?)', [$userId]);
+    foreach (['mechanics', 'links', 'customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'shop_profile', 'appointments', 'time_entries', 'techs', 'vendors', 'purchase_orders'] as $t) q("DELETE FROM $t WHERE user_id=?", [$userId]);
     q('DELETE FROM users WHERE id=?', [$userId]);
 }
 function guests_purge(): void {
@@ -335,7 +336,8 @@ function diag_analyze(array $veh, array $codes, string $freezeText = '', array $
 
 function owns_row(string $table, int $id): bool {
     if (in_array($table, ['job_lines', 'job_payments', 'job_auth', 'job_inspect'], true)) return $id > 0 && (bool)col("SELECT 1 FROM $table x JOIN jobs j ON j.id=x.job_id WHERE x.id=? AND j.user_id=?", [$id, uid()]);
-    return in_array($table, ['customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog'], true) && $id > 0 && (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]);
+    if ($table === 'po_lines') return $id > 0 && (bool)col('SELECT 1 FROM po_lines x JOIN purchase_orders p ON p.id=x.po_id WHERE x.id=? AND p.user_id=?', [$id, uid()]);
+    return in_array($table, ['customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'appointments', 'techs', 'time_entries', 'vendors', 'purchase_orders'], true) && $id > 0 && (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]);
 }
 
 /** Scanner and repair-information services owners and shops already pay for, grouped by brand, to open from the app. */

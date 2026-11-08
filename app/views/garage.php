@@ -46,8 +46,12 @@ foreach ($list as $gv) {
 
     <section class="wz-step" data-step="1">
       <div class="kind-pick"><?php foreach (VEHICLE_KINDS as $k => $l): ?><label><input type="radio" name="kind" value="<?= $k ?>" <?= $k === 'car' ? 'checked' : '' ?>><span><?= ['car' => '🚗', 'suv' => '🛻', 'scooter' => '🛵', 'motorcycle' => '🏍️'][$k] ?> <?= h($l) ?></span></label><?php endforeach; ?></div>
-      <div class="wz-tabs"><button type="button" class="on" data-tab="pick">Pick it from a list</button><button type="button" data-tab="vin">Use the VIN</button></div>
-      <div data-pane="pick">
+      <div class="wz-tabs"><button type="button" class="on" data-tab="scan">📷 Scan it</button><button type="button" data-tab="vin">Type the VIN</button><button type="button" data-tab="pick">Pick from a list</button></div>
+      <div data-pane="scan">
+        <p class="muted" style="margin-top:0">Fastest: take a photo of the VIN sticker on the driver's door frame (or the VIN plate at the bottom of the windshield, or your registration card). We read it and fill in everything. A licence plate photo works too.</p>
+        <?= idscan_widget() ?>
+      </div>
+      <div data-pane="pick" hidden>
         <div class="form-grid">
           <div><label>Year</label><select name="year" data-year><option value="">Year</option><?php for ($y = (int)date('Y') + 1; $y >= 1981; $y--): ?><option><?= $y ?></option><?php endfor; ?></select></div>
           <div><label>Make</label><select data-make><option value="">Make</option></select><input type="text" name="make" data-make-text placeholder="Type the make" hidden></div>

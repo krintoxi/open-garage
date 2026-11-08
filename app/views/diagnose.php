@@ -51,6 +51,7 @@ $canPhoto = VISION_URL !== '';
       <option value="0" <?= !$own && !$custVeh ? 'selected' : '' ?>>Another vehicle (VIN or year / make / model)…</option>
     </select>
     <div class="other-veh" data-other-veh hidden>
+      <?= idscan_widget('', false) ?>
       <div class="row" style="flex-wrap:nowrap"><input type="text" name="vin" placeholder="VIN (17 characters), any country" maxlength="20" autocapitalize="characters" data-dvin><button type="button" class="sm" data-dvin-go>Decode</button></div>
       <small class="muted" data-dvin-out></small>
       <div class="form-grid"><div><label>Year</label><input type="number" name="year" min="1950" max="<?= (int)date('Y') + 1 ?>"></div><div><label>Make</label><input type="text" name="make" placeholder="Toyota, Peugeot, Tata, BYD…"></div>

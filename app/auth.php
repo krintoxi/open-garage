@@ -61,7 +61,7 @@ case 'guest':
     redirect(url('garage') . '#add');
 
 case 'signup':
-    if (!SIGNUP_OPEN) { flash('Sign-ups are closed right now.', 'err'); redirect(url('login')); }
+    if (!signups_open()) { flash('Sign-ups are closed right now.', 'err'); redirect(url('login')); }
     if (post('website') !== '') redirect(url('login')); // honeypot: bots fill every field
     if ((int)post('t0') > 0 && time() - (int)post('t0') < 3) redirect(url('signup')); // submitted faster than a human can type
     $email = mb_strtolower(post('email')); $pw = post('password');

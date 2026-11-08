@@ -58,6 +58,8 @@ foreach ([
     'YOUTUBE_KEY' => '',           // YouTube Data API v3 key: in-app video search (without it, the Videos tab opens YouTube)
     'PUBLIC_LOOKUP' => true,       // multi-user: public code lookup page without an account
     'LIMIT_CUSTOMER_VEHICLES' => 500,
+    'PLATE_PROVIDER' => '',        // plate -> VIN lookups (paid registration data): autodev | carsxe | vinaudit
+    'PLATE_KEY' => '',             // that provider's API key (keep it in secrets.php)
 ] as $k => $v) if (!defined($k)) define($k, $v);
 if (!defined('DATA_DIR')) define('DATA_DIR', APP_ROOT . '/data');
 if (!defined('UPLOAD_DIR')) define('UPLOAD_DIR', APP_ROOT . '/uploads');
@@ -67,6 +69,7 @@ require APP_ROOT . '/app/consumer.php';
 require APP_ROOT . '/app/obd_kb.php';
 require APP_ROOT . '/app/diag.php';
 require APP_ROOT . '/app/shop.php';
+require APP_ROOT . '/app/ops.php';
 
 function db(): PDO {
     static $pdo = null;
@@ -86,6 +89,7 @@ function db(): PDO {
     migrate_accounts($pdo);
     migrate_consumer($pdo);
     migrate_diag($pdo);
+    migrate_ops($pdo);
     $count = (int)$pdo->query('SELECT COUNT(*) FROM vehicle')->fetchColumn();
     if ($count === 0 && !$pdo->query("SELECT 1 FROM settings WHERE key='seeded'")->fetchColumn()) {
         $pdo->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('seeded', datetime('now'))");

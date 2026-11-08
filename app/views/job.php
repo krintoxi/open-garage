@@ -32,6 +32,9 @@ $next = match ($job['stage']) {
     'paid' => [], 'declined' => [['estimate', 'Back to estimate', '']], default => [['estimate', 'Restore as estimate', '']],
 };
 $csrf = '<input type="hidden" name="_csrf" value="' . csrf() . '">';
+$techList = techs(); $clocked = job_clocked($jid);
+$appt = row("SELECT * FROM appointments WHERE job_id=? AND status NOT IN ('cancelled','no_show') ORDER BY starts_at DESC LIMIT 1", [$jid]);
+$toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'], true) ? count(parts_to_order($jid)) : 0;
 ?>
 <div class="head ro-head">
   <div><h1><?= h($title) ?> <span class="st stage-<?= h($job['stage']) ?>"><?= h(JOB_STAGES[$job['stage']]) ?></span></h1>
@@ -43,6 +46,8 @@ $csrf = '<input type="hidden" name="_csrf" value="' . csrf() . '">';
   </div>
 </div>
 <?php if ($job['approved_at'] && $job['approved_by'] && strtotime((string)$job['approved_at']) > time() - 86400 * 2): ?><div class="flash">Approved by <?= h($job['approved_by']) ?> on <?= h(date('M j, g:i a', strtotime((string)$job['approved_at']))) ?><?= $job['approve_note'] ? ': “' . h($job['approve_note']) . '”' : '' ?>.</div><?php endif; ?>
+<?php if ($appt): ?><p class="muted" style="margin:-6px 0 12px">Appointment <?= h(date('D M j, g:i a', strtotime((string)$appt['starts_at']))) ?> · <a href="<?= url('calendar', ['d' => substr((string)$appt['starts_at'], 0, 10), 'a' => $appt['id']]) ?>">open</a></p><?php endif; ?>
+<?php if ($toOrder): ?><a class="flash" style="display:block" href="<?= url('purchasing', ['job' => $jid]) ?>">⇩ <?= $toOrder ?> approved part<?= $toOrder === 1 ? '' : 's' ?> still to order. Create a purchase order →</a><?php endif; ?>
 <?php if ($auth['over'] && !$est): ?><div class="flash flash-err">Current total <?= money($auth['current']) ?> is over the authorized <?= money($auth['authorized']) ?><?= $auth['over_limit'] ? ' by more than your limit' : '' ?>. Get and record additional authorization before doing the extra work.</div><?php endif; ?>
 
 <div class="grid g3 ro">
@@ -81,6 +86,13 @@ $csrf = '<input type="hidden" name="_csrf" value="' . csrf() . '">';
             <button name="do" value="rename" data-prompt="New name for this service" data-prompt-field="to">Rename</button><button name="do" value="delete" data-confirm="Remove this service and its lines?">Remove service</button></div></details>
           <input type="hidden" name="to" value=""></form>
       </header>
+      <?php $gLab = array_values(array_filter($gl, fn($x) => $x['kind'] === 'labor')); $sold = array_sum(array_map(fn($x) => (float)$x['qty'], $gLab)); $gTech = $gLab ? (int)$gLab[0]['tech_id'] : 0; $hist = labor_history($g, (string)($V['make'] ?? '')); ?>
+      <?php if ($gLab || $techList): ?><div class="svc-meta">
+        <?php if ($techList && $gLab): ?><form method="post" class="row" style="gap:6px;flex-wrap:nowrap"><input type="hidden" name="action" value="line_tech"><?= $csrf ?><input type="hidden" name="job_id" value="<?= $jid ?>"><input type="hidden" name="grp" value="<?= h($g) ?>">
+          <select name="tech_id" data-autosubmit aria-label="Technician"><option value="">Tech: unassigned</option><?php foreach ($techList as $t): ?><option value="<?= (int)$t['id'] ?>" <?= $gTech === (int)$t['id'] ? 'selected' : '' ?>><?= h($t['name']) ?></option><?php endforeach; ?></select></form><?php endif; ?>
+        <?php if ($sold > 0 || isset($clocked[$g])): ?><span class="<?= isset($clocked[$g]) && $clocked[$g] > $sold && $sold > 0 ? 'warn-t' : 'muted' ?>">⏱ <?= hrs($clocked[$g] ?? 0) ?> clocked of <?= hrs($sold) ?> sold</span><?php endif; ?>
+        <?php if ($hist): ?><span class="muted" title="Actual clocked time on finished orders with this service name">Your history: <?= hrs(round($hist['avg'], 1)) ?> avg over <?= $hist['n'] ?> job<?= $hist['n'] === 1 ? '' : 's' ?><?= $hist['make'] ? ' (' . h($hist['make']) . ')' : '' ?></span><?php endif; ?>
+      </div><?php endif; ?>
       <div class="lines">
         <?php foreach ($gl as $l): $amt = round($l['qty'] * $l['price'], 2); ?>
         <details class="line line-<?= h($l['kind']) ?> ls-<?= h($l['status']) ?>" id="l<?= (int)$l['id'] ?>">
@@ -123,6 +135,12 @@ $csrf = '<input type="hidden" name="_csrf" value="' . csrf() . '">';
         <button class="primary">Add</button></form>
       <form method="post" class="row" style="margin-top:10px;gap:8px;flex-wrap:nowrap"><input type="hidden" name="action" value="line_add"><?= $csrf ?><input type="hidden" name="job_id" value="<?= $jid ?>"><input type="hidden" name="kind" value="labor"><input type="hidden" name="qty" value="1">
         <input type="text" name="grp" placeholder="Or a blank service, e.g. Replace front control arm" required data-copy-to="description"><input type="hidden" name="description"><button>Add blank</button></form>
+      <details style="margin-top:12px"><summary class="muted"><b>Paste a supplier cart or quote</b> (PartsTech, Nexpart, RockAuto, a spreadsheet)</summary>
+        <form method="post"><input type="hidden" name="action" value="parts_paste"><?= $csrf ?><input type="hidden" name="job_id" value="<?= $jid ?>">
+          <div class="form-grid"><div><label>Into service</label><input type="text" name="grp" list="grp-list" value="<?= h(array_key_first($groups) ?? 'Parts') ?>"></div><div><label>Supplier (if not in the rows)</label><input type="text" name="supplier"></div></div>
+          <datalist id="grp-list"><?php foreach (array_keys($groups) as $gn): ?><option value="<?= h($gn) ?>"><?php endforeach; ?></datalist>
+          <label>Rows: part number, description, brand, qty, your cost (a header row is fine)</label><textarea name="text" rows="4" class="mono" placeholder="Part Number,Description,Brand,Qty,Cost&#10;D1234,Front brake pads,Akebono,1,38.20"></textarea>
+          <button class="sm primary" style="margin-top:6px">Add parts</button></form></details>
       <p class="muted" style="font-size:12.5px;margin-top:8px">Canned labor hours are typical book times for common vehicles; check your labor guide (ALLDATA, ProDemand, MOTOR) for this vehicle. Manage canned jobs under <a href="<?= url('shop') ?>#canned">Shop settings</a>.</p>
     </div>
 
@@ -145,6 +163,18 @@ $csrf = '<input type="hidden" name="_csrf" value="' . csrf() . '">';
   </div>
 
   <div class="aside">
+    <?php if ($techList && in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts', 'done'], true)): ?>
+    <div class="card ro-clock" id="clock" style="margin-bottom:14px"><h2>Time on this order</h2>
+      <?php foreach ($techList as $t): $jb = tech_open((int)$t['id'], 'job'); $here = $jb && (int)$jb['job_id'] === $jid; ?>
+        <form method="post" class="ro-clock-row"><input type="hidden" name="action" value="clock_punch"><?= $csrf ?><input type="hidden" name="tech_id" value="<?= (int)$t['id'] ?>"><input type="hidden" name="job_id" value="<?= $jid ?>"><input type="hidden" name="back" value="job">
+          <span class="dot" style="background:<?= h($t['color'] ?: '#5e667a') ?>"></span><b><?= h($t['name']) ?></b>
+          <?php if ($here): ?><small class="muted"><?= h((string)$jb['grp'] ?: 'whole order') ?> · <?= hm((int)((time() - (int)$jb['started_at']) / 60)) ?></small><?php else: ?><select name="grp"><?php foreach (array_keys($groups) ?: [''] as $gn): ?><option value="<?= h($gn) ?>"><?= h($gn ?: 'Whole order') ?></option><?php endforeach; ?></select><?php endif; ?>
+          <?php if ($t['pin_hash']): ?><input type="password" name="pin" inputmode="numeric" placeholder="PIN" class="pin" required autocomplete="off"><?php endif; ?>
+          <button class="sm <?= $here ? '' : 'primary' ?>" name="what" value="<?= $here ? 'job_stop' : 'job_start' ?>"><?= $here ? 'Stop' : 'Start' ?></button></form>
+      <?php endforeach; ?>
+      <?php if ($clocked): ?><p class="muted" style="font-size:12.5px;margin:8px 0 0">Clocked so far: <?= hrs(array_sum($clocked)) ?> of <?= hrs($T['hours']) ?> sold.</p><?php endif; ?>
+    </div>
+    <?php endif; ?>
     <div class="card totals">
       <h2><?= $est ? 'Estimate total' : (in_array($job['stage'], ['invoiced', 'paid'], true) ? 'Invoice total' : 'Approved total') ?></h2>
       <table>
@@ -212,13 +242,18 @@ $csrf = '<input type="hidden" name="_csrf" value="' . csrf() . '">';
         <div><label>Method</label><select name="method"><?php foreach (PAY_METHODS as $k => $lb): ?><option value="<?= $k ?>"><?= h($lb) ?></option><?php endforeach; ?></select></div>
         <div><label>Date</label><input type="date" name="paid_on" value="<?= today() ?>"></div><div><label>Reference</label><input type="text" name="note" placeholder="last 4, check #"></div>
         <div class="full"><button class="sm primary">Record payment</button></div></form>
-      <p class="muted" style="font-size:12px">Records payments taken on your own terminal or in cash; the app does not process cards.</p>
+      <?php if (stripe_on($S)): ?><div class="callout" style="margin-top:10px"><b>Card payment online</b><br>
+          <?php if ($link): ?><small>The customer link has a <b>Pay <?= money(max(0, $balance)) ?></b> button once the work is done or invoiced. Payments land here automatically.</small>
+          <?php else: ?><form method="post"><input type="hidden" name="action" value="pay_link"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><button class="sm primary" style="margin-top:6px">Make payment link</button></form><?php endif; ?></div>
+      <?php else: ?><p class="muted" style="font-size:12px">Records payments taken on your terminal, in cash or by check. To take cards online, connect your Stripe account under <a href="<?= url('shop') ?>#cards">Shop settings</a>.</p><?php endif; ?>
     </div>
 
     <div class="card" style="margin-top:14px">
       <div class="row" style="gap:6px;flex-wrap:wrap">
         <?php if ($job['vehicle_id']): ?><a class="btn sm" href="<?= url('diagnose', ['vehicle' => $job['vehicle_id']]) ?>">Diagnose this vehicle</a><?php endif; ?>
         <?php if ($job['diag_report_id']): ?><a class="btn sm" href="<?= url('diagnose', ['r' => $job['diag_report_id']]) ?>">Diagnosis #<?= (int)$job['diag_report_id'] ?></a><?php endif; ?>
+        <a class="btn sm" href="<?= url('calendar', ['new' => 1, 'job' => $jid]) ?>">Schedule</a>
+        <?php if ($toOrder || in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'], true)): ?><a class="btn sm" href="<?= url('purchasing', ['job' => $jid]) ?>">Order parts</a><?php endif; ?>
         <form method="post"><input type="hidden" name="action" value="job_copy"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><button class="sm">Copy as new estimate</button></form>
         <?php if (!in_array($job['stage'], ['void', 'paid'], true)): ?><form method="post"><input type="hidden" name="action" value="job_stage"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><input type="hidden" name="to" value="void"><button class="sm ghost" data-confirm="Void this repair order? It stays on record as void.">Void</button></form><?php endif; ?>
         <form method="post"><input type="hidden" name="action" value="job_delete"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><button class="sm ghost danger" data-confirm="Delete this repair order completely, with its lines and payments? Voiding keeps a record instead.">Delete</button></form>

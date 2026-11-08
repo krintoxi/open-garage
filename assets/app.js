@@ -151,12 +151,25 @@ document.querySelectorAll('table').forEach(t => {
     $$('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== b.dataset.tab; });
   }));
 
-  // VIN lookup fills everything it can
+  // VIN lookup fills everything it can (typed, or from the scan buttons)
   const vin = $('[data-vin]'), out = $('[data-vin-result]');
+  form.dataset.idscanCustom = '1';
+  form.addEventListener('idscan', e => {
+    const r = e.detail;
+    if (r.plate && form.elements.plate) form.elements.plate.value = r.plate;
+    if (!r.vin) return;
+    vin.value = r.vin;
+    $$('.wz-tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === 'vin'));
+    $$('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== 'vin'; });
+    applyVin(r);
+  });
   $('[data-vin-lookup]').addEventListener('click', async () => {
     out.className = 'vin-result muted'; out.textContent = 'Looking up…';
-    try {
-      const r = await getJSON('index.php?p=vin&vin=' + encodeURIComponent(vin.value.trim().toUpperCase()));
+    try { applyVin(await getJSON('index.php?p=vin&vin=' + encodeURIComponent(vin.value.trim().toUpperCase()))); }
+    catch (e) { out.className = 'vin-result err'; out.textContent = 'Could not reach the VIN service. Pick it from the list instead.'; }
+  });
+  function applyVin(r) {
+    {
       if (r.error && !r.make) { out.className = 'vin-result err'; out.textContent = r.error; return; }
       if (r.kind) { const k = form.querySelector(`[name=kind][value="${r.kind}"]`); if (k) { k.checked = true; syncKind(); } }
       ['trim', 'engine', 'transmission'].forEach(k => { if (r[k]) form.elements[k].value = r[k]; });
@@ -164,11 +177,9 @@ document.querySelectorAll('table').forEach(t => {
       makeSel.replaceChildren(opt('__other', r.make || 'Make')); makeTxt.hidden = false; makeTxt.value = r.make || '';
       modelSel.replaceChildren(opt('__other', r.model || 'Model')); modelSel.disabled = false; modelTxt.hidden = false; modelTxt.value = r.model || '';
       out.className = 'vin-result ok';
-      out.textContent = 'Found: ' + [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ') + (r.engine ? ' · ' + r.engine : '') + '. Tap Next.';
-    } catch (e) {
-      out.className = 'vin-result err'; out.textContent = 'Could not reach the VIN service. Pick it from the list instead.';
+      out.textContent = 'Found: ' + [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ') + (r.engine ? ' · ' + r.engine : '') + (r.error ? '. ' + r.error : '') + '. Tap Next.';
     }
-  });
+  }
 
   // Photo preview
   const photo = $('[data-photo]'), prev = $('[data-preview]');
@@ -368,6 +379,94 @@ document.querySelectorAll('table').forEach(t => {
   document.querySelectorAll('[data-kind-pick]').forEach(s => s.addEventListener('change', () => {
     const l = s.form.querySelector('[data-auto-lbl]'); if (l) l.textContent = s.value === 'labor' ? 'shop labor rate' : (s.value === 'part' ? 'matrix' : 'cost');
   }));
-  const cp = document.querySelector('[data-cust-pick]');
-  if (cp) { const vs = cp.form.elements.vehicle_id; const sync = () => { [...vs.options].forEach(o => { if (o.value) o.hidden = cp.value !== '' && o.dataset.cust !== cp.value; }); }; cp.addEventListener('change', sync); sync(); }
+  document.querySelectorAll('[data-cust-pick]').forEach(cp => { const vs = cp.form?.elements.vehicle_id; if (!vs) return; const sync = () => { [...vs.options].forEach(o => { if (o.value) o.hidden = cp.value !== '' && o.dataset.cust !== cp.value; }); }; cp.addEventListener('change', sync); sync(); });
+  document.querySelectorAll('[data-autosubmit]').forEach(s => s.addEventListener('change', () => s.form.requestSubmit ? s.form.requestSubmit() : s.form.submit()));
+})();
+
+
+// Scan the VIN or plate: photo from the phone camera. Door-frame barcodes (Code 39 / Data Matrix / QR) are decoded on the
+// phone; anything else (printed VIN, windshield plate, registration, licence plate) goes to the server's photo reader.
+(() => {
+  const widgets = document.querySelectorAll('[data-idscan]'); if (!widgets.length) return;
+  const vinOf = t => { const m = String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^I(?=[A-HJ-NPR-Z0-9]{17}$)/, '').match(/[A-HJ-NPR-Z0-9]{17}/); return m ? m[0] : ''; };
+  let zx = null;
+  const loadZXing = () => zx || (zx = new Promise((ok, no) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+    sc.integrity = 'sha384-BzBxP10ZE72aitqj5UMmUsbKFliP/DZqA8Wq+BNNhlIJDGoEd1tpkMYXOg9+n6sB'; sc.crossOrigin = 'anonymous';
+    sc.onload = () => window.ZXing ? ok(window.ZXing) : no(); sc.onerror = no; document.head.appendChild(sc);
+  }));
+  const shrink = (file, max) => new Promise(ok => {
+    const img = new Image(), u = URL.createObjectURL(file);
+    img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => ok({ blob: b || file, url: c.toDataURL('image/jpeg', .9) }), 'image/jpeg', .88); };
+    img.onerror = () => { URL.revokeObjectURL(u); ok({ blob: file, url: '' }); };
+    img.src = u;
+  });
+  async function barcode(file, small) {
+    try {
+      if ('BarcodeDetector' in window) {
+        const sup = await BarcodeDetector.getSupportedFormats();
+        const want = ['code_39', 'code_128', 'data_matrix', 'qr_code', 'pdf417'].filter(f => sup.includes(f));
+        if (want.length) { const res = await new BarcodeDetector({ formats: want }).detect(await createImageBitmap(file)); for (const x of res) { const v = vinOf(x.rawValue); if (v) return v; } }
+      }
+    } catch (e) {}
+    try {
+      if (!small.url) return '';
+      const Z = await loadZXing(), hints = new Map();
+      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.DATA_MATRIX, Z.BarcodeFormat.QR_CODE, Z.BarcodeFormat.PDF_417]);
+      hints.set(Z.DecodeHintType.TRY_HARDER, true);
+      const r = await new Z.BrowserMultiFormatReader(hints).decodeFromImageUrl(small.url);
+      return vinOf(r.getText());
+    } catch (e) { return ''; }
+  }
+  const fill = (form, r) => {
+    if (!form || form.dataset.idscanCustom) return;
+    const set = (n, v) => { const el = form.elements[n]; if (el && v !== undefined && v !== null && v !== '' && !(el instanceof RadioNodeList)) el.value = v; };
+    ['vin', 'year', 'make', 'model', 'engine', 'trim', 'plate', 'country'].forEach(k => set(k, r[k]));
+    if (r.state) set('state', r.state);
+    const vt = [r.year, r.make, r.model].filter(Boolean).join(' '); if (vt) set('vehicle_text', vt + (r.trim ? ' ' + r.trim : ''));
+    if (r.kind && form.elements.kind) { const k = form.querySelector(`[name=kind][value="${r.kind}"]`); if (k) k.checked = true; else if (form.elements.kind.tagName === 'SELECT') form.elements.kind.value = r.kind; }
+  };
+  widgets.forEach(w => w.querySelectorAll('[data-idscan-file]').forEach(inp => inp.addEventListener('change', async () => {
+    const file = inp.files[0]; if (!file) return;
+    const kind = inp.dataset.idscanFile, out = w.querySelector('[data-idscan-out]'), form = w.closest('form');
+    const say = (t, cls) => { out.className = 'idscan-out ' + (cls || 'muted'); out.textContent = t; };
+    w.classList.add('busy'); say(kind === 'vin' ? 'Looking for the VIN barcode…' : 'Reading the plate…');
+    try {
+      const small = await shrink(file, 1800);
+      const fd = new FormData(); fd.append('_csrf', w.dataset.csrf); fd.append('kind', kind); if (w.dataset.book) fd.append('book', w.dataset.book);
+      const code = kind === 'vin' ? await barcode(file, small) : '';
+      if (code) fd.append('barcode', code); else { say(kind === 'vin' ? 'Reading the VIN from the photo (about 15 seconds)…' : 'Reading the plate (about 15 seconds)…'); fd.append('photo', small.blob, 'scan.jpg'); }
+      const r = await fetch('index.php?p=scan_id', { method: 'POST', body: fd, credentials: 'same-origin' }).then(x => x.json());
+      if (r.error && !r.vin && !r.plate) { say(r.error, 'err'); return; }
+      fill(form, r);
+      const veh = [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ');
+      say((r.vin ? (veh ? 'Found: ' + veh + ' · ' : 'VIN ') + r.vin + (r.via === 'barcode' ? ' (barcode)' : '') : '') + (r.plate ? (r.vin ? ' · ' : '') + 'Plate ' + r.plate + (r.state ? ' (' + r.state + ')' : r.region ? ' (' + r.region + ')' : '') : '')
+        + (r.vin && r.checked === false ? '. Check the VIN against the sticker: one character may be misread.' : '') + (r.hint ? ' ' + r.hint : '') + (r.error && r.vin ? ' ' + r.error : ''), 'ok');
+      w.dispatchEvent(new CustomEvent('idscan', { detail: r, bubbles: true }));
+    } catch (e) { say('Could not read it right now. Type it in instead.', 'err'); }
+    finally { w.classList.remove('busy'); inp.value = ''; }
+  })));
+})();
+
+// Time clock: pick a job+service, live timers, gentle auto-refresh; calendar sheet open/prefill.
+(() => {
+  document.querySelectorAll('[data-job-pick]').forEach(sel => {
+    const f = sel.form;
+    f.addEventListener('submit', e => {
+      const btn = e.submitter, [jid, grp] = (sel.value || '|').split('|');
+      f.elements.job_id.value = jid || ''; f.elements.grp.value = grp || '';
+      if (btn && btn.hasAttribute('data-needs-job') && !jid) { e.preventDefault(); alert('Pick the repair order (and service) to start first.'); sel.focus(); }
+    });
+  });
+  const since = document.querySelectorAll('[data-since]');
+  if (since.length) setInterval(() => since.forEach(el => { const m = Math.floor((Date.now() / 1000 - +el.dataset.since) / 60); el.textContent = Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); }), 20000);
+  const now = document.querySelector('[data-clock-now]');
+  if (now) setInterval(() => { now.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }, 15000);
+  const ar = document.querySelector('[data-autorefresh]');
+  if (ar) { let touched = false; document.addEventListener('input', () => { touched = true; }); document.addEventListener('focusin', () => { touched = true; });
+    setInterval(() => { if (!touched && document.visibilityState === 'visible') location.reload(); }, +ar.dataset.autorefresh * 1000); }
+  document.querySelectorAll('dialog[data-open-now]').forEach(d => d.showModal && d.showModal());
+  document.querySelectorAll('[data-appt-date]').forEach(b => b.addEventListener('click', () => { const d = document.querySelector('#sheet-appt [name=date]'); if (d) d.value = b.dataset.apptDate; }));
 })();

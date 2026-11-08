@@ -35,6 +35,7 @@ $i = fn(string $k) => h((string)$S[$k]);
     <div class="form-grid">
       <div><label>Estimate / RO prefix</label><input type="text" name="est_prefix" value="<?= $i('est_prefix') ?>"></div><div><label>Next estimate number</label><input type="number" name="next_est" value="<?= $i('next_est') ?>"></div>
       <div><label>Invoice prefix</label><input type="text" name="inv_prefix" value="<?= $i('inv_prefix') ?>"></div><div><label>Next invoice number</label><input type="number" name="next_inv" value="<?= $i('next_inv') ?>"></div>
+      <div><label>Purchase order prefix</label><input type="text" name="po_prefix" value="<?= $i('po_prefix') ?>"></div><div><label>Next PO number</label><input type="number" name="next_po" value="<?= $i('next_po') ?>"></div>
       <div class="full"><label class="inline"><input type="checkbox" name="show_rates" value="1" <?= $S['show_rates'] ? 'checked' : '' ?>> Show labor hours and rate to customers (otherwise one labor amount per service)</label></div>
       <div class="full"><label class="inline"><input type="checkbox" name="show_part_numbers" value="1" <?= $S['show_part_numbers'] ? 'checked' : '' ?>> Show part numbers and brands to customers</label></div>
       <div><label>Extra authorization needed above (%)</label><input type="number" step="0.1" name="auth_threshold_pct" value="<?= $i('auth_threshold_pct') ?>"></div><div><label>…or above (amount)</label><input type="number" step="0.01" name="auth_threshold_amt" value="<?= $i('auth_threshold_amt') ?>"></div>
@@ -61,6 +62,34 @@ $i = fn(string $k) => h((string)$S[$k]);
         <div class="row" style="margin-top:8px;gap:8px"><button class="primary sm">Save</button><?php if ($ec): ?><a class="btn sm ghost" href="<?= url('shop') ?>#cform">New</a><?php endif; ?></div></form>
       <?php if ($ec): ?><form method="post" style="margin-top:8px"><input type="hidden" name="action" value="canned_delete"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="id" value="<?= (int)$ec['id'] ?>"><button class="sm ghost danger" data-confirm="Delete this canned job?">Delete</button></form><?php endif; ?>
     </div>
+  </div>
+</div>
+
+<div class="grid g2" style="margin-top:18px">
+  <form method="post" class="card" id="booking"><input type="hidden" name="action" value="booking_save"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
+    <h2>Hours and booking</h2>
+    <table class="hours"><?php $hh = shop_hours($S); foreach (WEEKDAYS as $n => $dn): ?><tr><td><label class="inline" style="margin:0"><input type="checkbox" name="day[<?= $n ?>]" value="1" <?= $hh[$n] ? 'checked' : '' ?>> <?= $dn ?></label></td>
+      <td><input type="time" name="open[<?= $n ?>]" value="<?= h($hh[$n][0] ?? '08:00') ?>" step="900"></td><td><input type="time" name="close[<?= $n ?>]" value="<?= h($hh[$n][1] ?? '17:00') ?>" step="900"></td></tr><?php endforeach; ?></table>
+    <div class="form-grid">
+      <div><label>Appointment slot (minutes)</label><input type="number" name="slot_min" min="15" step="15" value="<?= $i('slot_min') ?>"></div><div><label>Bays / jobs at once</label><input type="number" name="bays" min="1" value="<?= $i('bays') ?>"></div>
+      <div><label>Online: earliest (hours ahead)</label><input type="number" name="book_lead_hours" min="0" value="<?= $i('book_lead_hours') ?>"></div><div><label>Online: up to (days ahead)</label><input type="number" name="book_days" min="1" value="<?= $i('book_days') ?>"></div>
+      <div class="full"><label class="inline"><input type="checkbox" name="book_on" value="1" <?= $S['book_on'] ? 'checked' : '' ?>> Let customers request appointments online (you accept each one)</label></div>
+      <div class="full"><label>Note on the booking page</label><textarea name="book_note" rows="2" placeholder="e.g. Drop-offs from 7:30 am. Diagnostics start at $120."><?= h((string)$S['book_note']) ?></textarea></div>
+    </div>
+    <?php if ($S['book_on'] && $S['book_token']): $bl = book_url($S); ?><label>Your booking link</label><div class="share-link"><input type="text" readonly value="<?= h($bl) ?>" data-select-all><button type="button" class="sm primary" data-copy="<?= h($bl) ?>">Copy</button></div>
+      <label class="inline"><input type="checkbox" name="new_link" value="1"> Replace the link (the old one stops working)</label><?php endif; ?>
+    <div class="row end" style="margin-top:10px"><button class="primary">Save hours and booking</button></div>
+  </form>
+  <div class="card" id="cards">
+    <h2>Card payments</h2>
+    <p class="muted" style="font-size:13.5px">Customers pay their invoice by card (Apple Pay and Google Pay too) from the link you send them, through <b>your own Stripe account</b>: the money goes straight to you, Stripe's fees apply, and each payment is recorded on the repair order automatically.</p>
+    <?php if (stripe_on($S)): ?><p><span class="st st-ok">connected</span> key ending <span class="mono">…<?= h(substr((string)$S['stripe_sk'], -4)) ?></span><?= str_contains((string)$S['stripe_sk'], '_test_') ? ' · <b>test mode</b>' : '' ?></p><?php endif; ?>
+    <form method="post"><input type="hidden" name="action" value="pay_save"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
+      <label>Stripe secret key<?= stripe_on($S) ? ' (leave blank to keep the current one)' : '' ?></label><input type="password" name="stripe_sk" autocomplete="off" placeholder="sk_live_… or a restricted key rk_live_…" class="mono">
+      <small class="muted">In Stripe: Developers → API keys. A restricted key needs write access to Checkout Sessions only. Use a test key first to try it.</small>
+      <div class="form-grid"><div><label>Currency code</label><input type="text" name="currency_code" value="<?= $i('currency_code') ?>" maxlength="3"></div>
+        <?php if (stripe_on($S)): ?><div><label class="inline" style="margin-top:28px"><input type="checkbox" name="stripe_clear" value="1"> Disconnect</label></div><?php endif; ?></div>
+      <div class="row end" style="margin-top:10px"><button class="primary">Save</button></div></form>
   </div>
 </div>
 

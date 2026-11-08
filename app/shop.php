@@ -28,6 +28,11 @@ function shop_defaults(): array {
         'est_terms' => 'This estimate is valid for 30 days. Prices for parts may change. Work beyond this estimate will not be done without your authorization.',
         'inv_terms' => 'Payment is due when the vehicle is picked up. Replaced parts are available on request unless returned for core credit or warranty.',
         'auth_threshold_pct' => 10.0, 'auth_threshold_amt' => 100.0,
+        // Appointments and online booking. hours: ISO weekday => [open, close] (absent = closed).
+        'hours' => [1 => ['08:00', '17:30'], 2 => ['08:00', '17:30'], 3 => ['08:00', '17:30'], 4 => ['08:00', '17:30'], 5 => ['08:00', '17:30'], 6 => ['09:00', '13:00']],
+        'slot_min' => 60, 'bays' => 2, 'book_on' => 0, 'book_token' => '', 'book_lead_hours' => 2, 'book_days' => 21, 'book_note' => '',
+        // Purchase orders and card payments (Stripe Checkout on the shop's own account; key never shown back).
+        'po_prefix' => 'PO-', 'next_po' => 1001, 'stripe_sk' => '', 'currency_code' => 'usd',
     ];
 }
 function shop(?int $userId = null): array {

@@ -13,7 +13,7 @@ if (!MULTI_USER && $pwHash === '' && !is_local_request()) {
     exit;
 }
 $authed = MULTI_USER ? (uid() > 0 && current_user() !== null) : ($pwHash === '' || hash_equals(auth_tag($pwHash), (string)($_SESSION['authed'] ?? '')));
-const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify', 'record', 'manifest', 'unsub', 'lookup', 'yt', 'quote'];
+const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify', 'record', 'manifest', 'unsub', 'lookup', 'yt', 'quote', 'book'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // A body larger than post_max_size arrives with $_POST and $_FILES empty: explain it instead of "Bad token".
@@ -36,6 +36,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'unsub') { require APP_ROOT . '/app/views/unsub.php'; exit; }
     // Customer approving an estimate from their link (the token is the authorization; no account).
     if (($_GET['p'] ?? '') === 'quote' && $action === '') { require APP_ROOT . '/app/views/quote.php'; exit; }
+    // Online booking form (public, by the shop's booking link).
+    if (($_GET['p'] ?? '') === 'book' && $action === '') { require APP_ROOT . '/app/views/book.php'; exit; }
+    // VIN / plate scan from a photo or a barcode decoded on the phone (JSON). Signed in, or on a shop's booking page.
+    if (($_GET['p'] ?? '') === 'scan_id') {
+        csrf_check();
+        header('Content-Type: application/json');
+        $bk = (string)($_POST['book'] ?? '');
+        $okPublic = !$authed && preg_match('/^[a-f0-9]{18}$/D', $bk) && col("SELECT 1 FROM shop_profile WHERE json_extract(data, '$.book_token')=? AND json_extract(data, '$.book_on')=1", [$bk]);
+        if (!$authed && !$okPublic) { http_response_code(403); echo json_encode(['error' => 'Sign in first.']); exit; }
+        session_write_close();
+        echo json_encode(id_scan(post('kind') === 'plate' ? 'plate' : 'vin', $_FILES['photo'] ?? null, mb_substr(post('barcode'), 0, 200), $authed ? '' : 'ip:' . login_ip()), JSON_UNESCAPED_SLASHES);
+        exit;
+    }
     // Phone share sheet ("Share -> this app" from a scanner app): the installed web app receives the report here.
     if (($_GET['p'] ?? '') === 'share_in') {
         if (!$authed) redirect(url('login'));
@@ -66,7 +79,7 @@ if ($page === 'yt') {
     echo json_encode($ok ? youtube_search($q) : ['items' => [], 'fallback' => 'https://www.youtube.com/results?search_query=' . urlencode($q)], JSON_UNESCAPED_SLASHES);
     exit;
 }
-if (in_array($page, ['signup', 'forgot', 'reset', 'record', 'unsub', 'quote'], true)) { require APP_ROOT . '/app/views/' . $page . '.php'; exit; }
+if (in_array($page, ['signup', 'forgot', 'reset', 'record', 'unsub', 'quote', 'book'], true)) { require APP_ROOT . '/app/views/' . $page . '.php'; exit; }
 // Web app manifest (install to the home screen), named after this instance.
 if ($page === 'manifest') {
     session_write_close();
@@ -146,6 +159,21 @@ if ($page === 'parts_q') {
     exit;
 }
 
+// Payroll export for a period (CSV; signed in).
+if ($page === 'team_csv') {
+    $_GET['period'] ??= 'week';
+    $monday = strtotime('monday this week'); $period = (string)$_GET['period'];
+    [$from, $to] = match ($period) { 'last' => [$monday - 7 * 86400, $monday], 'month' => [strtotime(date('Y-m-01')), strtotime(date('Y-m-01') . ' +1 month')],
+        'lastmonth' => [strtotime(date('Y-m-01') . ' -1 month'), strtotime(date('Y-m-01'))], 'custom' => [strtotime((string)($_GET['from'] ?? '')) ?: $monday, (strtotime((string)($_GET['to'] ?? '')) ?: time()) + 86400], default => [$monday, $monday + 7 * 86400] };
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="payroll-' . date('Ymd', $from) . '-' . date('Ymd', $to - 86400) . '.csv"');
+    $o = fopen('php://output', 'w');
+    fputcsv($o, ['Technician', 'Pay type', 'Rate', 'Shift hours', 'Hours on jobs', 'Flagged hours', 'Efficiency %', 'Productivity %', 'Labor sold', 'Gross pay (est.)', 'From', 'To'], ',', '"', '');
+    foreach (time_report($from, $to) as $r) fputcsv($o, [$r['tech']['name'], $r['tech']['pay_type'], $r['tech']['pay_rate'], round($r['shift'], 2), round($r['job'], 2), round($r['flagged'], 2),
+        $r['eff'] === null ? '' : round($r['eff']), $r['prod'] === null ? '' : round($r['prod']), round($r['sold'], 2), $r['pay'], date('Y-m-d', $from), date('Y-m-d', $to - 86400)], ',', '"', '');
+    exit;
+}
+
 // VIN lookup for the Add-vehicle form (JSON; signed-in only).
 if ($page === 'vin') {
     session_write_close();
@@ -155,7 +183,7 @@ if ($page === 'vin') {
 }
 
 $pages = ['dashboard','issues','issue','issue_form','codes','common','maintenance','inspections','inspection_new','inspection',
-          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share','diagnose','customers','tools','jobs','job','shop','job_print'];
+          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share','diagnose','customers','tools','jobs','job','shop','job_print','calendar','clock','team','purchasing','po','po_print','admin'];
 if (!in_array($page, $pages, true)) { http_response_code(404); $page = 'dashboard'; }
 
 if ($page === 'export' && MULTI_USER) {
@@ -176,7 +204,7 @@ if ($page === 'export') {
 // A page about one record (an issue, a visit...) shows that record's vehicle, even if another vehicle was selected.
 // No vehicle yet (fresh install): everything starts at the Garage page's "Add a vehicle" form.
 if (!vid() && is_pro() && $page === 'dashboard') redirect(url('jobs'));
-if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links', 'diagnose', 'customers', 'tools', 'jobs', 'job', 'shop', 'job_print'], true)) redirect(url('garage') . '#add');
+if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links', 'diagnose', 'customers', 'tools', 'jobs', 'job', 'shop', 'job_print', 'calendar', 'clock', 'team', 'purchasing', 'po', 'po_print', 'admin'], true)) redirect(url('garage') . '#add');
 $follow = ['issue' => 'issues', 'issue_form' => 'issues', 'visit' => 'visits', 'visit_form' => 'visits', 'inspection' => 'inspections', 'brief' => 'visits'];
 if (isset($follow[$page]) && ($rid = (int)($_GET['id'] ?? 0))) {
     if (!owns($follow[$page], $rid)) { http_response_code(404); $page = 'garage'; }
@@ -189,5 +217,5 @@ $use3d = false;
 ob_start();
 require APP_ROOT . '/app/views/' . $page . '.php';
 $content = ob_get_clean();
-if ($page === 'brief' || $page === 'login' || $page === 'job_print') { echo $content; exit; }
+if (in_array($page, ['brief', 'login', 'job_print', 'po_print'], true)) { echo $content; exit; }
 require APP_ROOT . '/app/views/layout.php';

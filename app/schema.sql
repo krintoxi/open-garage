@@ -60,3 +60,17 @@ CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs (user_id, stage);
 CREATE INDEX IF NOT EXISTS idx_job_lines_job ON job_lines (job_id);
 CREATE TABLE IF NOT EXISTS job_auth (id INTEGER PRIMARY KEY, job_id INT NOT NULL, amount REAL, method TEXT, by_name TEXT, note TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS job_inspect (id INTEGER PRIMARY KEY, job_id INT NOT NULL, section TEXT, item TEXT, rating TEXT, note TEXT, sort INT DEFAULT 0);
+-- Shop operations (2026-11-08, part 2): appointments, technicians and time clock, vendors and purchase orders.
+CREATE TABLE IF NOT EXISTS appointments (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, customer_id INT, vehicle_id INT, job_id INT, tech_id INT, starts_at TEXT, minutes INT DEFAULT 60,
+  title TEXT, concern TEXT, status TEXT DEFAULT 'scheduled', source TEXT DEFAULT 'shop', name TEXT, phone TEXT, email TEXT, vehicle_text TEXT, vin TEXT, plate TEXT, waiting INT DEFAULT 0,
+  notes TEXT, reminded_at TEXT, seen INT DEFAULT 1, created_at TEXT, updated_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_appt_user ON appointments (user_id, starts_at);
+CREATE TABLE IF NOT EXISTS techs (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT, role TEXT DEFAULT 'tech', pay_type TEXT DEFAULT 'hourly', pay_rate REAL DEFAULT 0,
+  color TEXT, pin_hash TEXT, active INT DEFAULT 1, sort INT DEFAULT 0, created_at TEXT);
+CREATE TABLE IF NOT EXISTS time_entries (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, tech_id INT NOT NULL, kind TEXT NOT NULL, job_id INT, grp TEXT, started_at INT NOT NULL, ended_at INT, note TEXT, edited INT DEFAULT 0);
+CREATE INDEX IF NOT EXISTS idx_time_tech ON time_entries (tech_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_time_job ON time_entries (job_id);
+CREATE TABLE IF NOT EXISTS vendors (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT, account_no TEXT, contact TEXT, phone TEXT, email TEXT, website TEXT, notes TEXT);
+CREATE TABLE IF NOT EXISTS purchase_orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, vendor_id INT, po_no TEXT, status TEXT DEFAULT 'draft', ref TEXT, notes TEXT, ordered_at TEXT, received_at TEXT,
+  total REAL DEFAULT 0, created_at TEXT, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS po_lines (id INTEGER PRIMARY KEY, po_id INT NOT NULL, job_line_id INT, catalog_id INT, part_no TEXT, brand TEXT, description TEXT, qty REAL DEFAULT 1, qty_received REAL DEFAULT 0, cost REAL DEFAULT 0);

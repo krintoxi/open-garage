@@ -28,3 +28,17 @@
 @media print{body{background:#fff}.page{box-shadow:none;margin:0;padding:0;max-width:none}.bar,.no-print,.sign{display:none!important}}
 .svc-h{flex-wrap:wrap}.svc-amt{white-space:nowrap}.approve{white-space:nowrap}
 @media(max-width:640px){.svc-h b{flex:1 1 60%}.doc-svc td{padding:6px 8px}}
+/* Purchase orders, online booking, card payment (2026-11-08) */
+.items{width:100%;border-collapse:collapse;margin-top:10px}.items th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);border-bottom:2px solid var(--ink);padding:6px 8px}
+.items td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}.items .num{text-align:right;white-space:nowrap}.items tfoot td{border-bottom:0;padding-top:10px}
+.pay-box{margin:16px 0;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:var(--soft)}
+.pay-box b{font-size:20px}.pay-box button{font-size:16px;padding:12px 22px}
+.book label{display:block;font-weight:600;margin:12px 0 4px}.book input[type=text],.book input[type=tel],.book input[type=email],.book select,.book textarea{width:100%;font:inherit;padding:11px;border:1px solid #cdd2db;border-radius:9px;background:#fff}
+.book .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:560px){.book .two{grid-template-columns:1fr}}
+.days{display:flex;gap:8px;overflow-x:auto;padding:4px 0 8px;scrollbar-width:thin}.days a{flex:0 0 auto;text-align:center;border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--ink);text-decoration:none;background:#fff;min-width:64px}
+.days a small{display:block;color:var(--mut);font-size:11px;text-transform:uppercase}.days a.on{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}.days a.full{opacity:.45}
+.slots{display:flex;flex-wrap:wrap;gap:8px}.slots label{margin:0;font-weight:500}.slots input{position:absolute;opacity:0;pointer-events:none}.slots span{display:inline-block;border:1px solid var(--line);border-radius:9px;padding:9px 14px;background:#fff;cursor:pointer}
+.slots input:checked+span{background:var(--acc);border-color:var(--acc);color:#fff}.slots input:focus-visible+span{outline:2px solid var(--acc);outline-offset:2px}
+.idscan{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}.idscan .btn{display:inline-flex;align-items:center;gap:6px;padding:11px 16px}.idscan-hint{flex:1 1 100%;font-size:12.5px;color:var(--mut)}
+.idscan-out{flex:1 1 100%;font-size:14px}.idscan-out.ok{color:#067647}.idscan-out.err{color:#b42318}
+.hp{position:absolute;left:-5000px}

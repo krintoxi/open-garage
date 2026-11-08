@@ -9,7 +9,22 @@ $job = preg_match('/^[a-f0-9]{32}$/D', $t) && rate_ok('quote-miss:' . $ip, 40, 3
 if (!$job) { rate_ok('quote-miss:' . $ip, 1000, 3600); http_response_code(404); exit('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not available</title><body style="font:16px system-ui;display:grid;place-items:center;min-height:90vh;text-align:center;padding:16px"><div><h1 style="font-size:22px">This estimate is not available</h1><p style="color:#666">Ask the shop for a new link.</p></div>'); }
 $S = shop((int)$job['user_id']);
 $done = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($job['stage'], ['estimate', 'declined', 'approved', 'in_progress', 'waiting_parts'], true) && rate_ok('quote-post:' . $ip, 20, 3600)) {
+// Card payment (the shop's Stripe account): start Checkout, and record it when Stripe sends the customer back.
+$payable = stripe_on($S) && in_array($job['stage'], ['done', 'invoiced'], true) && (float)$job['total'] - (float)$job['paid'] >= 0.5;
+$paidNow = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['pay'])) {
+    if ($payable && rate_ok('quote-pay:' . $ip, 10, 3600)) {
+        [$cu, $perr] = stripe_checkout($job);
+        if ($cu && str_starts_with($cu, 'https://checkout.stripe.com/')) { header('Location: ' . $cu, true, 303); exit; }
+        $done = 'payerr';
+    } else $done = 'payerr';
+}
+if (isset($_GET['paid']) && is_string($_GET['paid'])) {
+    $paidNow = stripe_confirm($job, (string)$_GET['paid']);
+    $job = row('SELECT * FROM jobs WHERE id=?', [$job['id']]);
+    $payable = stripe_on($S) && in_array($job['stage'], ['done', 'invoiced'], true) && (float)$job['total'] - (float)$job['paid'] >= 0.5;
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST['pay']) && in_array($job['stage'], ['estimate', 'declined', 'approved', 'in_progress', 'waiting_parts'], true) && rate_ok('quote-post:' . $ip, 20, 3600)) {
     $name = mb_substr(trim((string)($_POST['name'] ?? '')), 0, 80);
     $pend = array_unique(array_column(rows("SELECT grp FROM job_lines WHERE job_id=? AND status='pending'", [$job['id']]), 'grp'));
     if ($name === '' || empty($_POST['agree'])) $done = 'err';
@@ -32,12 +47,15 @@ $doc = in_array($job['stage'], ['invoiced', 'paid'], true) ? 'invoice' : 'estima
 $insp = rows('SELECT * FROM job_inspect WHERE job_id=? ORDER BY sort', [$job['id']]);
 $interactive = $pending && $doc === 'estimate';
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
-<title><?= h(($S['name'] ?: APP_NAME) . ' · ' . ($doc === 'invoice' ? 'Invoice ' . ($job['inv_no'] ?: $job['est_no']) : 'Estimate ' . $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=2"></head><body>
+<title><?= h(($S['name'] ?: APP_NAME) . ' · ' . ($doc === 'invoice' ? 'Invoice ' . ($job['inv_no'] ?: $job['est_no']) : 'Estimate ' . $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=3"></head><body>
 <div class="bar"><button type="button" onclick="print()">Print / save as PDF</button></div>
 <div class="page">
   <?php if ($done === 'yes'): ?><div class="notice">Thank you, <?= h((string)$job['approved_by']) ?>. Your approval was sent to <?= h($S['name'] ?: 'the shop') ?>.</div>
   <?php elseif ($done === 'no'): ?><div class="notice warn">Got it: nothing was approved. The shop will contact you.</div>
+  <?php elseif ($done === 'payerr'): ?><div class="notice warn">Card payment could not start right now. Please try again, or pay at the shop.</div>
   <?php elseif ($done === 'err'): ?><div class="notice warn">Please type your name and tick the box to approve.</div><?php endif; ?>
+  <?php if ($paidNow !== null): ?><div class="notice"><b>Payment received<?= $paidNow > 0 ? ': ' . money($paidNow, $S) : '' ?>.</b> Thank you! A receipt comes from Stripe by email.</div><?php endif; ?>
+  <?php if ($payable): ?><form method="post" class="pay-box"><input type="hidden" name="t" value="<?= h($t) ?>"><input type="hidden" name="pay" value="1"><div><small class="mut">Balance due</small><br><b><?= money((float)$job['total'] - (float)$job['paid'], $S) ?></b></div><button class="primary">Pay by card</button></form><?php endif; ?>
   <?php if ($interactive): ?><p><b>Please review:</b> untick anything you do not want done, then type your name and press Approve.</p><form method="post"><input type="hidden" name="t" value="<?= h($t) ?>"><?php endif; ?>
   <?php require APP_ROOT . '/app/views/_jobdoc.php'; ?>
   <?php if ($interactive): ?>

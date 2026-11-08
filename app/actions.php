@@ -16,6 +16,8 @@ const OWNED_BY_ACTION = [
     'mileage_delete' => 'mileage_log', 'recall_status' => 'recalls', 'mechanic_save' => 'mechanics', 'mechanic_delete' => 'mechanics', 'link_save' => 'links', 'link_delete' => 'links',
 ];
 if ($id && isset(OWNED_BY_ACTION[$action]) && !owns(OWNED_BY_ACTION[$action], $id)) { http_response_code(404); exit('Not found'); }
+// Appointments, time clock, purchasing, card payments, admin: account-level, no vehicle needed.
+if (in_array($action, OPS_ACTIONS, true)) { require APP_ROOT . '/app/actions_ops.php'; exit; }
 // Everything below works on the current vehicle; a new account has none until it adds one.
 if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set', 'mode_set', 'guest_keep', 'guest_end', 'diag_run', 'diag_delete', 'diag_to_vehicle', 'customer_save', 'customer_delete', 'customer_vehicle_add', 'tool_save', 'tool_preset', 'tool_delete', 'job_new', 'job_save', 'line_add', 'line_save', 'line_delete', 'group_action', 'canned_add', 'job_auth', 'job_stage', 'job_link', 'payment_add', 'payment_delete', 'job_copy', 'job_delete', 'inspect_start', 'inspect_save', 'shop_save', 'canned_save', 'canned_delete', 'catalog_save', 'catalog_delete', 'catalog_import'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
 
@@ -98,7 +100,7 @@ case 'vehicle_save':
     flash('Vehicle saved.'); redirect(url('vehicle'));
 
 case 'vehicle_add':
-    if (MULTI_USER && count(vehicles()) >= (is_guest() ? 3 : LIMIT_VEHICLES)) { flash(is_guest() ? 'A guest garage holds up to 3 vehicles. Keep your garage (free) to add more.' : 'This account can hold up to ' . LIMIT_VEHICLES . ' vehicles.', 'err'); redirect(url('garage')); }
+    if (MULTI_USER && !is_admin() && count(vehicles()) >= (is_guest() ? 3 : LIMIT_VEHICLES)) { flash(is_guest() ? 'A guest garage holds up to 3 vehicles. Keep your garage (free) to add more.' : 'This account can hold up to ' . LIMIT_VEHICLES . ' vehicles.', 'err'); redirect(url('garage')); }
     $kind = array_key_exists(post('kind'), VEHICLE_KINDS) ? post('kind') : 'car';
     if (post('make') === '' || post('model') === '') { flash('Make and model are required.', 'err'); redirect(url('garage') . '#add'); }
     $miles = post_int('miles') ?? 0;
@@ -723,9 +725,9 @@ case 'inspect_save':
 
 case 'shop_save':
     $d = [];
-    foreach (['name', 'address', 'phone', 'email', 'website', 'license', 'tax_id', 'currency', 'est_prefix', 'inv_prefix', 'warranty', 'est_terms', 'inv_terms'] as $k) $d[$k] = post($k);
+    foreach (['name', 'address', 'phone', 'email', 'website', 'license', 'tax_id', 'currency', 'est_prefix', 'inv_prefix', 'po_prefix', 'warranty', 'est_terms', 'inv_terms'] as $k) $d[$k] = post($k);
     foreach (['labor_rate', 'tax_parts', 'tax_labor', 'tax_fees', 'supplies_pct', 'supplies_cap', 'auth_threshold_pct', 'auth_threshold_amt'] as $k) $d[$k] = post_float($k) ?? 0;
-    foreach (['next_est', 'next_inv'] as $k) if (post_int($k)) $d[$k] = post_int($k);
+    foreach (['next_est', 'next_inv', 'next_po'] as $k) if (post_int($k)) $d[$k] = post_int($k);
     $d['show_rates'] = post('show_rates') === '1' ? 1 : 0; $d['show_part_numbers'] = post('show_part_numbers') === '1' ? 1 : 0;
     $m = [];
     foreach (preg_split('/[\n,;]+/', post('matrix')) as $row) if (preg_match('/^\s*\$?([\d.]+)\s*[:=+\s]\s*([\d.]+)\s*%?\s*$/', $row, $mm)) $m[] = [(float)$mm[1], (float)$mm[2]];
