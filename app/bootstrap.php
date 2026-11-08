@@ -366,7 +366,7 @@ function maintenance_status(array $m, int $miles): array {
     }
     if ($dueD !== null) {
         $d = days_until($dueD);
-        if ($d < 0) { $state = 'overdue'; $label[] = (-$d) . ' days overdue'; }
+        if ($d < 0) { $state = 'overdue'; $label[] = (-$d) . ($d === -1 ? ' day' : ' days') . ' overdue'; }
         elseif ($d <= 30) { if ($state !== 'overdue') $state = 'soon'; $label[] = $d === 0 ? 'due today' : ($d === 1 ? 'due tomorrow' : $d . ' days left'); }
         else $label[] = $d . ' days left';
     }

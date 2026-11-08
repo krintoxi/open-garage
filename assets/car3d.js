@@ -42,6 +42,8 @@ function init(host) {
   controls.autoRotate = !window.CAR3D_STATIC; controls.autoRotateSpeed = 0.6; controls.enablePan = false;
   // On phones let vertical swipes scroll the page; horizontal drags still orbit.
   renderer.domElement.style.touchAction = 'pan-y';
+  // A plain mouse wheel scrolls the page past the car; hold Ctrl/⌘ (or pinch on a trackpad) to zoom.
+  renderer.domElement.parentElement.addEventListener('wheel', (e) => { if (!e.ctrlKey && !e.metaKey) e.stopPropagation(); }, { capture: true });
   // Harness / deep-link camera presets (window.CAR3D_VIEW). +X is the front of the car, -Z the driver side.
   const VIEWS = { front34: [5.0, 1.5, 4.4], side: [0.01, 1.0, 8.6], rear34: [-5.0, 1.6, 4.6], front: [8.2, 1.2, 0.01], rear: [-8.2, 1.3, 0.01], top: [0.01, 9.5, 0.01], hero: [4.3, 1.45, 4.7], low: [4.2, 0.45, 3.6], driver34: [4.6, 1.5, -4.6], nose: [5.2, 0.75, 0.01] };
   if (window.CAR3D_VIEW && VIEWS[window.CAR3D_VIEW]) { camera.position.set(...VIEWS[window.CAR3D_VIEW]); if (window.CAR3D_VIEW === 'nose') { controls.minDistance = 1; controls.target.set(2.0, 0.55, 0); } controls.update(); }

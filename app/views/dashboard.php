@@ -48,134 +48,198 @@ $mods = array_values(array_filter(array_map(fn($l) => trim(preg_replace('/^\s*[-
   <div class="hotspot-panel"><button type="button" class="close">×</button><h3></h3><ul class="list"></ul></div>
   <div class="hs-label"></div>
   <div class="legend"><span><i style="background:var(--sev5)"></i>Critical</span><span><i style="background:var(--sev4)"></i>High</span><span><i style="background:var(--sev3)"></i>Moderate</span><span><i style="background:var(--sev2)"></i>Low</span><span><i style="background:var(--sev1)"></i>Minor</span></div>
-  <div class="hint">drag to orbit · click a marker</div>
+  <div class="hint">drag to spin · tap a dot to see the problem</div>
 </div>
 <script>window.GARAGE_HOTSPOTS = <?= json_encode(array_values($byLoc), JSON_UNESCAPED_SLASHES) ?>;</script>
 <?php else: require APP_ROOT . '/app/views/_stage.php'; endif; ?>
 
-<?php $health = vehicle_health((int)$veh['id']); $recallOpen = rows("SELECT * FROM recalls WHERE " . vw() . " AND status='open' ORDER BY park_it DESC, report_date DESC");
-$recallStale = (int)($veh['recalls_checked'] ?? 0) < time() - 7 * 86400; ?>
-<div class="health card health-<?= h($health['tone']) ?>"<?= $recallStale ? ' data-recalls-sync' : '' ?>>
-  <?= health_ring($health, 76) ?>
-  <div class="health-text">
-    <small>Health score</small>
-    <b><?= h($health['grade']) ?></b>
-    <?php if ($health['reasons']): ?>
-      <div class="health-why"><?php foreach (array_slice($health['reasons'], 0, 4) as $r): ?><a href="<?= h($r['url']) ?>" class="chip chip-<?= h($r['kind']) ?>"><?= h(mb_strimwidth($r['label'], 0, 46, '…')) ?> <em>−<?= rtrim(rtrim(number_format($r['pts'], 1), '0'), '.') ?></em></a><?php endforeach; ?><?= count($health['reasons']) > 4 ? '<span class="muted" style="font-size:12px">+' . (count($health['reasons']) - 4) . ' more</span>' : '' ?></div>
-    <?php else: ?><span class="muted">Nothing open, nothing overdue. Keep logging and it stays that way.</span><?php endif; ?>
+<?php
+$health = vehicle_health((int)$veh['id']);
+$recallOpen = rows("SELECT * FROM recalls WHERE " . vw() . " AND status='open' ORDER BY park_it DESC, report_date DESC");
+$recallStale = (int)($veh['recalls_checked'] ?? 0) < time() - 7 * 86400;
+$csrfIn = '<input type="hidden" name="_csrf" value="' . csrf() . '">';
+$short = trim((string)($veh['nickname'] ?: $veh['model'])) ?: 'your vehicle';
+$me = current_user();
+$first = !empty($me['name']) && !is_guest() ? strtok((string)$me['name'], ' ') : '';
+$hr = (int)date('G');
+$hello = ($hr < 5 ? 'Hi' : ($hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good evening'))) . ($first ? ', ' . $first : '');
+// Plain words instead of "severity 4/5".
+$sevWord = [5 => 'Fix now', 4 => 'Fix soon', 3 => 'When you can', 2 => 'Keep an eye on it', 1 => 'Minor'];
+$stWord = ['open' => '', 'monitoring' => 'Watching', 'scheduled' => 'Booked'];
+$fixSoon = count(array_filter($open, fn($i) => (int)$i['severity'] >= 4 && $i['status'] !== 'monitoring'));
+$overdue = count(array_filter($due, fn($d) => $d[1] === 'overdue'));
+$soonN = count(array_filter($due, fn($d) => $d[1] === 'soon'));
+$plural = fn(int $n, string $one, string $many = '') => $n . ' ' . ($n === 1 ? $one : ($many ?: $one . 's'));
+$svcN = $overdue + $soonN;
+$bits = array_values(array_filter([
+    $fixSoon ? $plural($fixSoon, 'problem') . ' to fix soon' : (count($open) ? $plural(count($open), 'small thing') . ' to keep an eye on' : ''),
+    !$svcN ? '' : ($overdue === $svcN ? $plural($svcN, 'service') . ' overdue' : $plural($svcN, 'service') . ' due' . ($overdue ? ' (' . $overdue . ' overdue)' : ' soon')),
+    $recallOpen ? $plural(count($recallOpen), 'recall') . ' to check' : '',
+    $activeCodes ? $plural(count($activeCodes), 'warning code') : '',
+]));
+$extra = count($bits) > 3; $bits = array_slice($bits, 0, 3);
+$sentence = $bits ? ucfirst(count($bits) > 1 ? implode(', ', array_slice($bits, 0, -1)) . ($extra ? ', ' : ' and ') . end($bits) : reset($bits)) . ($extra ? ' and a bit more.' : '.') : 'Nothing open and nothing overdue. Keep logging and it stays that way.';
+$headline = [
+    'good' => ucfirst($short) . ' is in great shape 🎉', 'ok' => ucfirst($short) . ' is doing fine 👍',
+    'warn' => ucfirst($short) . ' needs a little attention', 'bad' => ucfirst($short) . ' needs some care',
+][$health['tone']] ?? ucfirst($short);
+$milesAgo = $veh['mileage_updated'] ? -days_until((string)$veh['mileage_updated']) : null;
+$milesWhen = $milesAgo === null ? 'not logged yet' : ($milesAgo <= 0 ? 'updated today' : ($milesAgo === 1 ? 'updated yesterday' : 'updated ' . $milesAgo . ' days ago'));
+
+// "Up next": the few things worth doing now, each with one clear button.
+$todo = [];
+if ($open) {
+    $top = $open[0]; $step = '';
+    foreach (explode("\n", (string)$top['owner_guidance']) as $ln) { $ln = trim($ln); if ($ln !== '' && !str_ends_with($ln, ':')) { $step = preg_replace('/^(\d+\.|[-•*])\s*/', '', $ln); break; } }
+    $todo[] = ['🔧', $top['title'], $step ?: 'Open it to see what you can do yourself and what to tell the mechanic.', url('issue', ['id' => $top['id']]), 'See what to do', (int)$top['severity'] >= 4 ? 'hot' : ''];
+}
+if ($recallOpen) $todo[] = ['⚑', 'Check ' . (count($recallOpen) === 1 ? 'a safety recall' : count($recallOpen) . ' safety recalls'), 'Recall repairs are free at a dealer. It takes a minute to see if yours is affected.', url('recalls'), 'Check', 'warn'];
+if (!$lastInsp || $lastInspDays >= 7) $todo[] = ['✅', 'Do the 5-minute weekly check', is_two_wheeler($veh) ? 'Tires, brakes, oil level and lights.' : 'A quick look under the car, the fluid levels, the fan and the lights.', url('inspection_new'), 'Start', ''];
+foreach (array_slice($due, 0, 2) as [$m, $state, $lbl]) $todo[] = ['🛠', $m['item'], ucfirst($lbl) . '.', url('maintenance'), 'Open', $state === 'overdue' ? 'warn' : ''];
+if ($neverDone) $todo[] = ['📝', 'Fill in your service history', $plural(count($neverDone), 'item') . ' have no last-done date yet (' . implode(', ', array_map(fn($m) => $m['item'], array_slice($neverDone, 0, 3))) . (count($neverDone) > 3 ? ', …' : '') . '). Add what you know; skip the rest.', url('maintenance'), 'Fill in', ''];
+foreach ($maint as $m) if (!empty($m['due_date']) && ($dd = days_until($m['due_date'])) !== null && $dd > 30 && $dd <= 90) $todo[] = ['📅', $m['item'] . ' by ' . date('M j', strtotime($m['due_date'])), 'Book it, or do it at your next visit.', url('maintenance'), 'Plan', ''];
+if ($nextVisit && !$nextVisit['scheduled_on']) $todo[] = ['📅', 'Pick a date for your next visit', '“' . $nextVisit['title'] . '”' . ($nextVisit['mech'] ? ' with ' . $nextVisit['mech'] : '') . '.', url('visit', ['id' => $nextVisit['id']]), 'Set date', ''];
+$forVisit = $nextVisit ? (int)col("SELECT COUNT(*) FROM parts WHERE status='wanted' AND issue_id IN (SELECT issue_id FROM visit_issues WHERE visit_id=?)", [$nextVisit['id']]) : 0;
+$otherWanted = (int)col("SELECT COUNT(*) FROM parts p LEFT JOIN issues i ON i.id=p.issue_id WHERE " . vw('p') . " AND p.status='wanted' AND (i.id IS NULL OR i.status NOT IN ('resolved','dismissed'))" . ($nextVisit ? ' AND (p.issue_id IS NULL OR p.issue_id NOT IN (SELECT issue_id FROM visit_issues WHERE visit_id=' . (int)$nextVisit['id'] . '))' : ''));
+if ($forVisit) $todo[] = ['🛒', 'Buy ' . $plural($forVisit, 'part') . ' for your next visit', $otherWanted ? $otherWanted . ' more on your wish list.' : 'So the mechanic can start right away.', url('parts'), 'Parts', ''];
+elseif ($otherWanted) $todo[] = ['🛒', $plural($otherWanted, 'part') . ' on your wish list', 'Order them when you are ready.', url('parts'), 'Parts', ''];
+$todoShow = 3;
+$visits = (int)col("SELECT COUNT(*) FROM visits WHERE " . vw() . " AND status='done'");
+$taskLi = fn(array $t) => '<li class="task ' . h($t[5]) . '"><a href="' . $t[3] . '"><span class="task-ico" aria-hidden="true">' . h($t[0]) . '</span><span class="task-txt"><b>' . h($t[1]) . '</b><small>' . h($t[2]) . '</small></span><span class="task-go">' . h($t[4]) . ' <i aria-hidden="true">›</i></span></a></li>';
+?>
+<div class="dash">
+
+<section class="card dash-status tone-<?= h($health['tone']) ?>"<?= $recallStale ? ' data-recalls-sync' : '' ?>>
+  <div class="ds-top">
+    <?= health_ring($health, 84) ?>
+    <div class="ds-text">
+      <small><?= h($hello) ?> 👋</small>
+      <h2><?= h($headline) ?></h2>
+      <p><?= h($sentence) ?></p>
+    </div>
   </div>
-  <a class="btn sm health-share" href="<?= url('share') ?>">⇪ Share record</a>
+  <div class="ds-foot">
+    <details class="ds-odo">
+      <summary><span><?= is_two_wheeler($veh) ? '🛵' : '🚗' ?> <b><?= number_format($miles) ?></b> mi</span><small><?= h($milesWhen) ?></small><em>Update</em></summary>
+      <form method="post" class="row"><input type="hidden" name="action" value="update_miles"><?= $csrfIn ?><input type="number" name="miles" inputmode="numeric" placeholder="What does the odometer say?" required><button class="primary sm" type="submit">Save</button></form>
+    </details>
+    <?php if ($health['reasons']): ?>
+    <details class="ds-why"><summary>Why <?= (int)$health['score'] ?>/100?</summary>
+      <div class="health-why"><?php foreach ($health['reasons'] as $r): ?><a href="<?= h($r['url']) ?>" class="chip chip-<?= h($r['kind']) ?>"><?= h(mb_strimwidth($r['label'], 0, 46, '…')) ?> <em>−<?= rtrim(rtrim(number_format($r['pts'], 1), '0'), '.') ?></em></a><?php endforeach; ?></div>
+      <p class="muted">Every open problem, overdue service, recall and warning code takes points off. Sort them out and the score climbs back up.</p>
+    </details>
+    <?php endif; ?>
+    <a class="ds-share" href="<?= url('share') ?>">⇪ Share</a>
+  </div>
+</section>
+
+<div class="dash-quick" role="navigation" aria-label="Quick actions">
+  <a href="<?= url('diagnose') ?>"><span>🩺</span>Something's wrong</a>
+  <a href="<?= url('inspection_new') ?>"><span>✅</span>Weekly check</a>
+  <a href="<?= url('visit_form') ?>"><span>🛠</span>Log a service</a>
+  <a href="<?= url('issue_form') ?>"><span>➕</span>Note a problem</a>
+  <a href="<?= url('photos') ?>"><span>📷</span>Photos</a>
 </div>
+
 <?php if ($recallOpen): ?>
 <a class="recall-banner" href="<?= url('recalls') ?>"><span class="rb-ico">⚑</span><span><b><?= count($recallOpen) ?> safety recall<?= count($recallOpen) === 1 ? '' : 's' ?> for this model</b><small><?= h($recallOpen[0]['component']) ?><?= count($recallOpen) > 1 ? ' and more' : '' ?>. The repair is free at a dealer; check whether yours is affected.</small></span><span class="rb-go">Check →</span></a>
 <?php endif; ?>
-<div class="kpi">
-  <div class="card <?= $sevMax >= 4 ? 'hot' : '' ?>"><div class="stat"><small>Most urgent right now</small><b style="font-size:17px;font-family:var(--font);line-height:1.25"><?= $open ? '<a href="' . url('issue', ['id' => $open[0]['id']]) . '">' . h($open[0]['title']) . '</a>' : 'Nothing open' ?></b><small><?= $sevMax ? 'severity ' . $sevMax . '/5 · ' . SEVERITY[$sevMax] . ($sevMax >= 4 ? ' · fix within 2 weeks' : '') : '' ?></small></div></div>
-  <div class="card"><div class="stat"><small>Maintenance due</small><b><?= count($due) ?></b><small><?= count($due) ? 'overdue, due soon or missing a mileage' : 'nothing overdue' ?><?= $neverDone ? ' · <a href="' . url('maintenance') . '">' . count($neverDone) . ' never recorded: set last-done dates</a>' : '' ?></small></div></div>
-  <div class="card"><div class="stat"><small>Last weekly check</small><b><?= $lastInsp ? $lastInspDays . 'd' : '—' ?></b><small><?= $lastInsp ? 'ago · ' . fmt_date($lastInsp['done_on']) : 'none yet' ?></small></div></div>
-  <div class="card"><div class="stat"><small>Spent at mechanic (recorded)</small><b><?= '$' . number_format($spent, 0) ?></b><small><?= (int)col("SELECT COUNT(*) FROM visits WHERE " . vw() . " AND status='done'") ?> completed visits</small></div></div>
-</div>
 
-<?php
-$todo = [];
-if ($open) { $top = $open[0]; $first = ''; foreach (explode("\n", (string)$top['owner_guidance']) as $ln) { $ln = trim($ln); if ($ln !== '' && !str_ends_with($ln, ':')) { $first = preg_replace('/^(\d+\.|[-•*])\s*/', '', $ln); break; } } $todo[] = ['Do', $first ?: 'Open the top issue and follow the "For me" steps.', url('issue', ['id' => $top['id']])]; }
-if ($recallOpen) $todo[] = ['Recall', 'Check ' . (count($recallOpen) === 1 ? 'the safety recall' : 'the ' . count($recallOpen) . ' safety recalls') . ' against your VIN; a recall repair is free.', url('recalls')];
-if (!$lastInsp || $lastInspDays >= 7) $todo[] = ['Check', 'Do the 5-minute weekly check' . (is_two_wheeler($veh) ? ' (tires, brakes, oil level, lights).' : ' (cardboard under the car, fluid levels, fan, lights).') . '', url('inspection_new')];
-foreach (array_slice($due, 0, 2) as [$m, $state, $lbl]) $todo[] = ['Service', $m['item'] . ': ' . $lbl . '.', url('maintenance')];
-if ($neverDone) $todo[] = ['Record', count($neverDone) . ' maintenance item' . (count($neverDone) === 1 ? ' has' : 's have') . ' never been recorded (' . implode(', ', array_map(fn($m) => $m['item'], array_slice($neverDone, 0, 3))) . (count($neverDone) > 3 ? ', …' : '') . '). Enter when each was last done, or have it checked at the next visit.', url('maintenance')];
-// Explicit due dates (e.g. the dash service reminder) further out than "soon": a heads-up to plan for it.
-foreach ($maint as $m) if (!empty($m['due_date']) && ($dd = days_until($m['due_date'])) !== null && $dd > 30 && $dd <= 90) $todo[] = ['Plan', $m['item'] . ' is due by ' . fmt_date($m['due_date']) . '. Book it or combine it with the next visit.', url('maintenance')];
-if ($nextVisit && !$nextVisit['scheduled_on']) $todo[] = ['Book', 'Set a date for "' . $nextVisit['title'] . '".', url('visit', ['id' => $nextVisit['id']])];
-// Parts still to buy: those for the next visit's issues first; parts tied to resolved/dismissed issues never count.
-$forVisit = $nextVisit ? (int)col("SELECT COUNT(*) FROM parts WHERE status='wanted' AND issue_id IN (SELECT issue_id FROM visit_issues WHERE visit_id=?)", [$nextVisit['id']]) : 0;
-$otherWanted = (int)col("SELECT COUNT(*) FROM parts p LEFT JOIN issues i ON i.id=p.issue_id WHERE " . vw('p') . " AND p.status='wanted' AND (i.id IS NULL OR i.status NOT IN ('resolved','dismissed'))" . ($nextVisit ? ' AND (p.issue_id IS NULL OR p.issue_id NOT IN (SELECT issue_id FROM visit_issues WHERE visit_id=' . (int)$nextVisit['id'] . '))' : ''));
-if ($forVisit) $todo[] = ['Order', $forVisit . ' part' . ($forVisit === 1 ? '' : 's') . ' for the next visit ' . ($forVisit === 1 ? 'is' : 'are') . ' not bought yet.' . ($otherWanted ? ' (' . $otherWanted . ' more on the wanted list.)' : ''), url('parts')];
-elseif ($otherWanted) $todo[] = ['Order', $otherWanted . ' part' . ($otherWanted === 1 ? ' is' : 's are') . ' on the wanted list.', url('parts')];
-?>
-<div class="card hot" style="margin-bottom:18px">
-  <h2>What to do this week</h2>
-  <ol style="margin:0;padding-left:1.2em;font-size:15px;line-height:1.6"><?php foreach (array_slice($todo, 0, 7) as [$k, $t, $u]): ?><li><b style="color:var(--silver)"><?= h($k) ?>:</b> <?= h($t) ?> <a href="<?= $u ?>" class="muted" style="font-size:13px">open →</a></li><?php endforeach; ?></ol>
-</div>
-<div class="grid g3">
-  <div class="card" style="grid-column:span 2">
-    <a class="more" href="<?= url('issues') ?>">all issues →</a>
-    <h2>Open issues</h2>
-    <?php if (!$open): ?><div class="empty">No open issues. Nice.</div><?php endif; ?>
-    <ul class="list">
-      <?php foreach (array_slice($open, 0, 7) as $i): ?>
-        <li><?= sev_badge((int)$i['severity']) ?><div class="grow"><a class="t" href="<?= url('issue', ['id' => $i['id']]) ?>"><?= h($i['title']) ?></a><small><?= h($i['system']) ?> · <?= h(LOCATIONS[$i['location']] ?? '') ?> · opened <?= fmt_date($i['opened_on']) ?><?= $i['vtitle'] !== null ? ' · <span style="color:#fda4af">linked to a service visit</span>' : '' ?></small></div><?= status_badge($i['status']) ?></li>
+<section class="card dash-next">
+  <h2>Up next</h2>
+  <?php if (!$todo): ?>
+    <div class="all-good"><span>✨</span><div><b>You're all caught up.</b><small>Nothing to do this week. Log the mileage now and then and we'll tell you when a service comes up.</small></div></div>
+  <?php else: ?>
+    <ul class="tasks"><?php foreach (array_slice($todo, 0, $todoShow) as $t) echo $taskLi($t); ?></ul>
+    <?php if (count($todo) > $todoShow): ?><details class="more-tasks"><summary>Show <?= count($todo) - $todoShow ?> more</summary><ul class="tasks"><?php foreach (array_slice($todo, $todoShow, 6) as $t) echo $taskLi($t); ?></ul></details><?php endif; ?>
+  <?php endif; ?>
+</section>
+
+<div class="grid g3 dash-grid">
+  <section class="card" style="grid-column:span 2">
+    <a class="more" href="<?= url('issues') ?>">See all ›</a>
+    <h2>Problems</h2>
+    <?php if (!$open): ?><div class="all-good"><span>👌</span><div><b>No problems noted.</b><small>Noticed a noise, a leak or a light? <a href="<?= url('issue_form') ?>">Write it down</a> or <a href="<?= url('diagnose') ?>">ask the diagnosis helper</a>.</small></div></div><?php endif; ?>
+    <ul class="plist">
+      <?php foreach (array_slice($open, 0, 6) as $i): $s = max(1, min(5, (int)$i['severity'])); ?>
+        <li><a href="<?= url('issue', ['id' => $i['id']]) ?>"><i class="pdot sev-<?= $s ?>" aria-hidden="true"></i><span class="grow"><b><?= h($i['title']) ?></b><small><?= h(implode(' · ', array_unique(array_filter([$i['system'], LOCATIONS[$i['location']] ?? ''])))) ?> · since <?= h(date('M j', strtotime((string)$i['opened_on']))) ?></small></span><span class="ptag sev-<?= $s ?>"><?= h($stWord[$i['status']] ?: $sevWord[$s]) ?></span></a></li>
       <?php endforeach; ?>
     </ul>
-  </div>
-  <div class="card <?= $nextVisit ? '' : '' ?>">
-    <a class="more" href="<?= url('visits') ?>">visits →</a>
-    <h2>Next mechanic visit</h2>
-    <?php if ($nextVisit): ?>
-      <p><a class="t" href="<?= url('visit', ['id' => $nextVisit['id']]) ?>"><b><?= h($nextVisit['title']) ?></b></a></p>
-      <p class="muted"><?= $nextVisit['scheduled_on'] ? fmt_date($nextVisit['scheduled_on']) . ' (' . (days_until($nextVisit['scheduled_on']) >= 0 ? 'in ' . days_until($nextVisit['scheduled_on']) . ' days' : abs(days_until($nextVisit['scheduled_on'])) . ' days ago') . ')' : 'Date not set' ?><br><?= h($nextVisit['mech'] ?: 'Mechanic not assigned') ?></p>
-      <div class="row"><a class="btn sm" href="<?= url('visit', ['id' => $nextVisit['id']]) ?>">Open</a><a class="btn sm" href="<?= url('brief', ['id' => $nextVisit['id']]) ?>" target="_blank">Print brief</a></div>
+    <?php if (count($open) > 6): ?><a class="muted" href="<?= url('issues') ?>" style="font-size:13px">+<?= count($open) - 6 ?> more</a><?php endif; ?>
+  </section>
+  <section class="card">
+    <a class="more" href="<?= url('visits') ?>">History ›</a>
+    <h2>Mechanic</h2>
+    <?php if ($nextVisit): $du = $nextVisit['scheduled_on'] ? days_until($nextVisit['scheduled_on']) : null; ?>
+      <p style="margin:0 0 2px"><a href="<?= url('visit', ['id' => $nextVisit['id']]) ?>"><b><?= h($nextVisit['title']) ?></b></a></p>
+      <p class="muted" style="margin:0 0 10px"><?= $du === null ? 'No date yet' : ($du === 0 ? 'Today' : ($du === 1 ? 'Tomorrow' : ($du > 0 ? 'In ' . $du . ' days' : abs($du) . ' days ago'))) . ($nextVisit['scheduled_on'] ? ' · ' . h(date('D, M j', strtotime($nextVisit['scheduled_on'])))  : '') ?><?= $nextVisit['mech'] ? ' · ' . h($nextVisit['mech']) : '' ?></p>
+      <div class="row"><a class="btn sm" href="<?= url('visit', ['id' => $nextVisit['id']]) ?>"><?= $nextVisit['scheduled_on'] ? 'Open' : 'Set a date' ?></a><a class="btn sm ghost" href="<?= url('brief', ['id' => $nextVisit['id']]) ?>" target="_blank">Print for the mechanic</a></div>
     <?php else: ?>
-      <div class="empty">Nothing scheduled.</div><a class="btn sm primary" href="<?= url('visit_form') ?>">Schedule a visit</a>
+      <p class="muted" style="margin:0 0 10px">No visit planned.</p><a class="btn sm" href="<?= url('visit_form') ?>">Plan a visit</a>
     <?php endif; ?>
-    <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
-    <h3>Weekly check</h3>
-    <p class="muted" style="margin:0 0 8px"><?= $lastInsp ? 'Last done ' . fmt_date($lastInsp['done_on']) . ($lastInspDays >= 7 ? ' — due.' : '.') : 'Never done.' ?></p>
-    <a class="btn sm <?= (!$lastInsp || $lastInspDays >= 7) ? 'primary' : '' ?>" href="<?= url('inspection_new') ?>">Start weekly check</a>
-  </div>
+    <p class="muted ds-mini"><?= $visits ? $plural($visits, 'visit') . ' on record' . ($spent > 0 ? ' · $' . number_format($spent, 0) . ' spent' : '') : 'Log your services here and keep the receipts in one place.' ?></p>
+  </section>
 </div>
 
-<div class="grid g3" style="margin-top:18px">
-  <div class="card">
-    <a class="more" href="<?= url('maintenance') ?>">schedule →</a>
-    <h2>Maintenance due</h2>
-    <?php if (!$due): ?><div class="empty">Nothing overdue or due soon.<?= $neverDone ? ' ' . count($neverDone) . ' scheduled item' . (count($neverDone) === 1 ? ' has' : 's have') . ' never been recorded, so ' . (count($neverDone) === 1 ? 'it cannot' : 'they cannot') . ' be checked: set when each was last done on the Maintenance page.' : '' ?></div><?php endif; ?>
-    <ul class="list"><?php foreach (array_slice($due, 0, 6) as [$m, $state, $lbl]): ?><li><div class="grow"><span class="t"><?= h($m['item']) ?></span><small><?= h($lbl) ?></small></div><?= status_badge($state) ?></li><?php endforeach; ?></ul>
-  </div>
-  <div class="card">
-    <a class="more" href="<?= url('mileage') ?>">log →</a>
+<div class="grid g3 dash-grid">
+  <section class="card">
+    <a class="more" href="<?= url('maintenance') ?>">Schedule ›</a>
+    <h2>Service</h2>
+    <?php if (!$due): ?><div class="all-good"><span>🗓</span><div><b>Nothing due right now.</b><?php if ($neverDone): ?><small><?= $plural(count($neverDone), 'item') ?> on the schedule <?= count($neverDone) === 1 ? 'has' : 'have' ?> no last-done date yet, so we can't tell when <?= count($neverDone) === 1 ? "it's" : "they're" ?> due. <a href="<?= url('maintenance') ?>">Fill in what you know</a>.</small><?php endif; ?></div></div><?php endif; ?>
+    <ul class="plist"><?php foreach (array_slice($due, 0, 5) as [$m, $state, $lbl]): ?><li><a href="<?= url('maintenance') ?>"><i class="pdot <?= $state === 'overdue' ? 'sev-5' : ($state === 'soon' ? 'sev-3' : 'sev-1') ?>" aria-hidden="true"></i><span class="grow"><b><?= h($m['item']) ?></b><small><?= h(ucfirst($lbl)) ?></small></span><span class="ptag <?= $state === 'overdue' ? 'sev-5' : ($state === 'soon' ? 'sev-3' : 'sev-1') ?>"><?= ['overdue' => 'Overdue', 'soon' => 'Soon'][$state] ?? 'Needs mileage' ?></span></a></li><?php endforeach; ?></ul>
+  </section>
+  <section class="card" id="miles">
+    <a class="more" href="<?= url('mileage') ?>">Log ›</a>
     <h2>Mileage</h2>
-    <div class="stat"><b><?= number_format($miles) ?></b><small>updated <?= fmt_date($veh['mileage_updated']) ?></small></div>
+    <div class="stat"><b><?= number_format($miles) ?> <small style="display:inline;font-size:13px">mi</small></b><small><?= h($milesWhen) ?></small></div>
     <?php if (count($log) >= 2): $xs = array_map(fn($r) => strtotime($r['logged_at']), $log); $ys = array_map(fn($r) => (int)$r['miles'], $log); $minX = min($xs); $maxX = max($xs) ?: 1; $minY = min($ys); $maxY = max($ys); $pts = []; foreach ($log as $k => $r) { $x = $maxX > $minX ? ($xs[$k] - $minX) / ($maxX - $minX) * 300 : 150; $y = $maxY > $minY ? 60 - ($ys[$k] - $minY) / ($maxY - $minY) * 50 : 30; $pts[] = round($x, 1) . ',' . round($y + 5, 1); } ?>
       <svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none"><polyline fill="none" stroke="#c9cfdb" stroke-width="2" points="<?= implode(' ', $pts) ?>"/></svg>
-      <?php $first = $log[0]; $last = end($log); $days = max(1, (strtotime($last['logged_at']) - strtotime($first['logged_at'])) / 86400); $rate = ((int)$last['miles'] - (int)$first['miles']) / $days * 7; ?>
-      <small class="muted">≈ <?= number_format($rate) ?> mi/week over the log</small>
-    <?php else: ?><small class="muted">Log mileage weekly to see a trend.</small><?php endif; ?>
-    <form method="post" class="row" style="margin-top:10px"><input type="hidden" name="action" value="update_miles"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="number" name="miles" placeholder="Current odometer" style="width:170px" required><button class="primary sm" type="submit">Update</button></form>
-  </div>
+      <?php $firstL = $log[0]; $lastL = end($log); $days = max(1, (strtotime($lastL['logged_at']) - strtotime($firstL['logged_at'])) / 86400); $rate = ((int)$lastL['miles'] - (int)$firstL['miles']) / $days * 7; ?>
+      <small class="muted">You drive about <?= number_format($rate) ?> mi a week.</small>
+    <?php else: ?><small class="muted">Update it every week or two and we'll work out when services are due.</small><?php endif; ?>
+    <form method="post" class="row" style="margin-top:10px;flex-wrap:nowrap"><input type="hidden" name="action" value="update_miles"><?= $csrfIn ?><input type="number" name="miles" inputmode="numeric" placeholder="Odometer now" required><button class="primary sm" type="submit">Save</button></form>
+  </section>
   <?php if (is_two_wheeler($veh)): ?>
-  <div class="card">
-    <a class="more" href="<?= url('garage') ?>">garage →</a>
+  <section class="card">
+    <a class="more" href="<?= url('garage') ?>">Garage ›</a>
     <h2>Your garage</h2>
-    <ul class="list"><?php foreach (vehicles() as $gv): ?><li><div class="grow"><a class="t" href="<?= url('dashboard', ['v' => $gv['id']]) ?>"><?= h(vehicle_name($gv)) ?></a><small><?= number_format((int)$gv['mileage']) ?> mi · <?= h(VEHICLE_KINDS[$gv['kind'] ?: 'car'] ?? '') ?></small></div><?= (int)$gv['id'] === (int)$veh['id'] ? '<span class="st st-done">viewing</span>' : '' ?></li><?php endforeach; ?></ul>
+    <ul class="plist"><?php foreach (vehicles() as $gv): ?><li><a href="<?= url('dashboard', ['v' => $gv['id']]) ?>"><span class="grow"><b><?= h(vehicle_name($gv)) ?></b><small><?= number_format((int)$gv['mileage']) ?> mi · <?= h(VEHICLE_KINDS[$gv['kind'] ?: 'car'] ?? '') ?></small></span><?= (int)$gv['id'] === (int)$veh['id'] ? '<span class="ptag sev-1">Viewing</span>' : '' ?></a></li><?php endforeach; ?></ul>
     <a class="btn sm" href="<?= url('garage') ?>#add" style="margin-top:10px">+ Add a vehicle</a>
-  </div>
+  </section>
   <?php else: ?>
-  <div class="card">
-    <a class="more" href="<?= url('codes') ?>">codes →</a>
-    <h2>Active codes</h2>
-    <?php if (!$activeCodes): ?><div class="empty">No active codes logged.</div><?php endif; ?>
-    <ul class="list"><?php foreach ($activeCodes as $c): $lib = row('SELECT title FROM obd_codes WHERE code=?', [$c['code']]); ?><li><span class="code"><?= h($c['code']) ?></span><div class="grow"><span class="t"><?= h($lib['title'] ?? 'Not in library') ?></span><small>seen <?= fmt_date($c['seen_on']) ?></small></div></li><?php endforeach; ?></ul>
-    <form method="post" class="row" style="margin-top:8px"><input type="hidden" name="action" value="code_event_add"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="text" name="code" placeholder="Log a code, e.g. P0442" style="width:190px" required><button class="sm" type="submit">Log</button></form>
-  </div>
+  <section class="card">
+    <a class="more" href="<?= url('codes') ?>">Codes ›</a>
+    <h2>Warning lights</h2>
+    <?php if (!$activeCodes): ?><div class="all-good"><span>💡</span><div><b>No warning codes.</b><small>Check-engine light on? Type the code below, or <a href="<?= url('diagnose') ?>">let us help figure it out</a>.</small></div></div><?php endif; ?>
+    <ul class="plist"><?php foreach ($activeCodes as $c): $lib = row('SELECT title FROM obd_codes WHERE code=?', [$c['code']]); ?><li><a href="<?= url('codes') ?>"><span class="code"><?= h($c['code']) ?></span><span class="grow"><b><?= h($lib['title'] ?? 'Not in our library yet') ?></b><small>since <?= h(date('M j', strtotime((string)$c['seen_on']))) ?></small></span></a></li><?php endforeach; ?></ul>
+    <form method="post" class="row" style="margin-top:10px;flex-wrap:nowrap"><input type="hidden" name="action" value="code_event_add"><?= $csrfIn ?><input type="text" name="code" placeholder="Code, e.g. P0442" autocapitalize="characters" required><button class="sm" type="submit">Add</button></form>
+  </section>
   <?php endif; ?>
 </div>
 
-<div class="grid g3" style="margin-top:18px">
-  <div class="card">
-    <a class="more" href="<?= url('parts') ?>">parts →</a>
-    <h2>Parts & upgrades wanted</h2>
-    <ul class="list"><?php foreach ($partsWanted as $p): ?><li><div class="grow"><a class="t" href="<?= h($p['url']) ?>" target="_blank" rel="noopener"><?= h($p['name']) ?> ↗</a><small><?= h($p['supplier']) ?><?= $p['price'] ? ' · ' . fmt_money((float)$p['price']) : '' ?></small></div><?= status_badge($p['status']) ?></li><?php endforeach; ?></ul>
-  </div>
-  <div class="card">
-    <a class="more" href="<?= url('photos') ?>">gallery →</a>
-    <h2>Latest photos</h2>
-    <?php if (!$recentPhotos): ?><div class="empty">No photos yet. Add before/after shots from a visit or issue.</div><?php endif; ?>
-    <div class="photos" style="grid-template-columns:repeat(3,1fr)"><?php foreach ($recentPhotos as $ph): ?><figure><img src="<?= h(photo_url($ph['path'])) ?>" alt=""><figcaption><span class="stage"><?= h($ph['stage']) ?></span> <?= h($ph['caption']) ?></figcaption></figure><?php endforeach; ?></div>
-  </div>
-  <div class="card">
-    <a class="more" href="<?= url('vehicle') ?>">edit →</a>
-    <h2>The build</h2>
-    <div class="mods"><?php foreach ($mods as $m): ?><span><?= h($m) ?></span><?php endforeach; ?></div>
-    <p class="muted" style="margin-top:12px;font-size:13px"><?= h($veh['engine']) ?><br><?= h($veh['transmission']) ?></p>
-  </div>
+<?php if ($recentPhotos || $partsWanted || $mods || $veh['engine']): ?>
+<div class="grid g3 dash-grid">
+  <?php if ($partsWanted): ?>
+  <section class="card">
+    <a class="more" href="<?= url('parts') ?>">Parts ›</a>
+    <h2>Wish list</h2>
+    <ul class="plist"><?php foreach ($partsWanted as $p): ?><li><a href="<?= h($p['url'] ?: url('parts')) ?>"<?= $p['url'] ? ' target="_blank" rel="noopener"' : '' ?>><span class="grow"><b><?= h($p['name']) ?><?= $p['url'] ? ' ↗' : '' ?></b><small><?= h(implode(' · ', array_filter([$p['supplier'], $p['price'] ? fmt_money((float)$p['price']) : '']))) ?></small></span><span class="ptag sev-1"><?= $p['status'] === 'ordered' ? 'Ordered' : 'Wanted' ?></span></a></li><?php endforeach; ?></ul>
+  </section>
+  <?php endif; ?>
+  <section class="card"<?= $partsWanted ? '' : ' style="grid-column:span 2"' ?>>
+    <a class="more" href="<?= url('photos') ?>">Gallery ›</a>
+    <h2>Photos</h2>
+    <?php if (!$recentPhotos): ?><div class="all-good"><span>📷</span><div><b>No photos yet.</b><small>Snap a leak, a dashboard light or a receipt; it helps the mechanic and the next owner. <a href="<?= url('photos') ?>">Add one</a>.</small></div></div><?php endif; ?>
+    <div class="photos" style="grid-template-columns:repeat(<?= $partsWanted ? 3 : 4 ?>,1fr)"><?php foreach (array_slice($recentPhotos, 0, $partsWanted ? 6 : 8) as $ph): ?><figure><img src="<?= h(photo_url($ph['path'])) ?>" alt="<?= h($ph['caption']) ?>" loading="lazy"></figure><?php endforeach; ?></div>
+  </section>
+  <section class="card">
+    <a class="more" href="<?= url('vehicle') ?>">Edit ›</a>
+    <h2>About <?= h($short) ?></h2>
+    <?php if ($veh['engine'] || $veh['transmission']): ?><p class="muted" style="margin:0 0 10px;font-size:13.5px"><?= h(implode(' · ', array_filter([$veh['engine'], $veh['transmission']]))) ?></p><?php endif; ?>
+    <?php if ($mods): ?><div class="mods"><?php foreach ($mods as $m): ?><span><?= h($m) ?></span><?php endforeach; ?></div>
+    <?php else: ?><p class="muted" style="font-size:13.5px;margin:0">Add your upgrades and extras on <a href="<?= url('vehicle') ?>">Vehicle &amp; settings</a>.</p><?php endif; ?>
+  </section>
+</div>
+<?php endif; ?>
+
 </div>

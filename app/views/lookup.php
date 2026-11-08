@@ -19,7 +19,7 @@ $f = null;
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><?= h($authTitle) ?> · <?= h(APP_NAME) ?></title>
 <meta name="description" content="<?= $A && $A['items'] ? h($A['items'][0]['code'] . ': ' . $A['items'][0]['title'] . '. What it means, if it is safe to drive, likely causes, DIY checks, mechanic test plan and repair videos.') : 'Free check-engine code lookup for any car: meaning, causes, DIY fixes, mechanic test plans, recalls and repair videos.' ?>">
 <link rel="manifest" href="index.php?p=manifest"><link rel="icon" type="image/png" href="assets/favicon.png"><meta name="theme-color" content="#07080a">
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/app.css?v=17"></head>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/app.css?v=18"></head>
 <body class="public-lookup"><div class="main" style="max-width:1100px;margin:0 auto">
 <header class="pl-head"><a href="<?= url('login') ?>" class="pl-brand">✦ <?= h(APP_NAME) ?></a><span class="muted">Free code lookup</span>
   <span style="margin-left:auto" class="row"><?php if (GUESTS): ?><form method="post" action="index.php"><input type="hidden" name="action" value="guest"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="t0" value="<?= time() ?>"><button class="sm">Try the app</button></form><?php endif; ?><a class="btn sm primary" href="<?= url('signup') ?>">Free account</a></span></header>

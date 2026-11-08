@@ -500,3 +500,60 @@ body.auth .login{align-items:flex-start;padding-top:min(10vh,90px)}
 .cam-dlg[data-kind=plate] .cam-frame i{height:36%;width:80%}.cam-frame.hit i{border-color:#22c55e}
 .cam-flash{position:absolute;inset:0;background:#fff;opacity:0;transition:opacity .25s;pointer-events:none}.cam-flash.on{opacity:.7;transition:none}
 .cam-tip{text-align:center;color:var(--silver);font-size:14px;margin:12px 6px}.cam-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}.cam-btns button{flex:1 1 auto}
+
+/* ---------- Friendly vehicle dashboard (2026-11-08) ---------- */
+.dash .card h2{font-family:var(--font);text-transform:none;letter-spacing:0;font-size:17px;font-weight:650;margin-bottom:12px}
+.dash .card .more{font-size:13px}
+.dash .stat small{text-transform:none;letter-spacing:0;font-size:13px}
+.dash form.row input{flex:1;min-width:0;width:auto}
+.dash-grid{margin-top:16px}
+.dash-status{padding:18px 20px;margin-bottom:14px;border-color:var(--border2)}
+.dash-status.tone-good{border-color:rgba(34,197,94,.35);background:linear-gradient(135deg,rgba(34,197,94,.10),var(--panel) 62%)}
+.dash-status.tone-ok{border-color:rgba(163,230,53,.3);background:linear-gradient(135deg,rgba(163,230,53,.08),var(--panel) 62%)}
+.dash-status.tone-warn{border-color:rgba(245,158,11,.38);background:linear-gradient(135deg,rgba(245,158,11,.10),var(--panel) 62%)}
+.dash-status.tone-bad{border-color:rgba(239,68,68,.38);background:linear-gradient(135deg,rgba(239,68,68,.11),var(--panel) 62%)}
+.ds-top{display:flex;gap:18px;align-items:center}.ds-top .hring{flex:0 0 auto}
+.ds-text{min-width:0}.ds-text small{color:var(--muted);font-size:14px}
+.dash .ds-text h2{font-size:23px;line-height:1.2;margin:2px 0 6px;font-weight:700}
+.ds-text p{margin:0;color:var(--silver);font-size:15px;line-height:1.5}
+.ds-foot{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;align-items:flex-start}
+.ds-foot details,.dash .more-tasks{border:0;padding:0;margin:0;background:none;border-radius:0}.ds-foot details{min-width:0}.ds-foot details[open]{flex:1 1 100%;order:3}
+.ds-foot summary,.ds-share{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--border2);background:rgba(255,255,255,.03);font-size:13.5px;color:var(--text);user-select:none}
+.ds-foot summary::-webkit-details-marker{display:none}
+.ds-foot summary:hover,.ds-share:hover{border-color:var(--silver);color:#fff}
+.ds-foot summary{white-space:nowrap}.ds-odo summary b{font-family:var(--mono);font-weight:600}.ds-odo summary small{color:var(--muted);font-size:12.5px}.ds-odo summary em{font-style:normal;color:#fca5a5;font-weight:600}
+.ds-odo form{margin-top:10px;flex-wrap:nowrap}
+.ds-why .health-why{margin-top:10px}.ds-why p{font-size:13px;margin:10px 0 0}
+.ds-share{margin-left:auto}
+.dash-quick{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.dash-quick a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:14px 8px;border-radius:14px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:13px;font-weight:500;line-height:1.25;transition:border-color .15s,transform .15s}
+.dash-quick a:hover{border-color:var(--accent);transform:translateY(-1px)}.dash-quick span{font-size:24px;line-height:1}
+.dash-next{margin-bottom:0}
+.tasks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.task a{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;background:var(--panel2);border:1px solid var(--border);color:var(--text);transition:border-color .15s}
+.task a:hover{border-color:var(--border2);color:var(--text)}.task a:hover .task-go{color:#fff}
+.task-ico{flex:0 0 40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:19px;background:rgba(255,255,255,.05)}
+.task.hot .task-ico{background:rgba(239,68,68,.18)}.task.warn .task-ico{background:rgba(245,158,11,.16)}
+.task-txt{flex:1;min-width:0}.task-txt b{display:block;font-weight:600;font-size:15px;line-height:1.3}
+.task-txt small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--muted);font-size:13.5px;line-height:1.4;margin-top:2px}
+.task-go{flex:0 0 auto;white-space:nowrap;font-size:13px;font-weight:600;color:#fca5a5}.task-go i{font-style:normal;font-size:18px;vertical-align:-1px;margin-left:2px}
+.more-tasks{margin-top:8px}.more-tasks>summary{list-style:none;cursor:pointer;text-align:center;padding:8px;color:var(--muted);font-size:13.5px;border-radius:10px}
+.more-tasks>summary::-webkit-details-marker{display:none}.more-tasks>summary:hover{color:#fff;background:var(--panel2)}.more-tasks[open]>summary{display:none}
+.all-good{display:flex;gap:12px;align-items:flex-start;padding:4px 0}.all-good>span{font-size:26px;line-height:1.1}
+.all-good b{display:block;font-weight:600}.all-good small{display:block;color:var(--muted);font-size:13.5px;line-height:1.45;margin-top:2px}.all-good small a{color:var(--silver);text-decoration:underline;text-underline-offset:2px}
+.plist{list-style:none;margin:0;padding:0}
+.plist li a{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);color:var(--text)}
+.plist li:last-child a{border-bottom:0}.plist li a:hover b{color:#fff}
+.plist .grow{flex:1;min-width:0}.plist b{display:block;font-weight:600;font-size:14.5px;line-height:1.3}.plist small{display:block;color:var(--muted);font-size:12.5px;margin-top:1px}
+.pdot{flex:0 0 10px;height:10px;border-radius:50%;background:currentColor}
+.ptag{flex:0 0 auto;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid;white-space:nowrap}
+.ds-mini{font-size:12.5px;margin:14px 0 0}
+@media(max-width:640px){
+  .dash-status{padding:16px}.ds-top{gap:14px}.ds-top .hring{width:68px;height:68px}
+  .dash .ds-text h2{font-size:20px}.ds-text p{font-size:14.5px}
+  .dash-quick{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 16px;margin:0 -16px 14px;padding:0 16px;scrollbar-width:none}
+  .dash-quick::-webkit-scrollbar{display:none}
+  .dash-quick a{flex:0 0 96px;scroll-snap-align:start;padding:12px 6px}
+  .task a{padding:12px;gap:12px}.task-go{font-size:0}.task-go i{font-size:24px;color:var(--muted)}
+  .plist .ptag{font-size:11px;padding:2px 8px}
+}
