@@ -37,7 +37,23 @@ mb_internal_encoding('UTF-8');
 
 define('APP_ROOT', dirname(__DIR__));
 // Optional host-specific overrides (not synced): may define DATA_DIR / UPLOAD_DIR.
-if (is_file(APP_ROOT . '/app/config.local.php')) require APP_ROOT . '/app/config.local.php';
+$cfgFile = (string)(getenv('GARAGE_CONFIG') ?: APP_ROOT . '/app/config.local.php');
+if (is_file($cfgFile)) require $cfgFile;
+// Instance settings (override in app/config.local.php).
+foreach ([
+    'MULTI_USER' => false,         // false: one owner, one password (settings table). true: email sign-up, each account sees only its own vehicles.
+    'APP_NAME' => 'Garage',
+    'SIGNUP_OPEN' => true,         // multi-user: allow new accounts
+    'BASE_URL' => '',              // e.g. https://garage.example.com (links in emails)
+    'MAIL_KEY' => '',              // Resend API key for verification / reset emails
+    'MAIL_FROM' => '',             // e.g. Garage <hello@example.com>
+    'VISION_URL' => '',            // garage-vision service (cut-out, depth, 3D); empty = off
+    'VISION_TOKEN' => '',
+    'VISION_MESH' => false,        // experimental single-photo 3D (needs a GPU host with several GB free)
+    'LIMIT_VEHICLES' => 10,        // per account (multi-user)
+    'LIMIT_PHOTOS' => 400,
+    'LIMIT_VISION_PER_DAY' => 25,
+] as $k => $v) if (!defined($k)) define($k, $v);
 if (!defined('DATA_DIR')) define('DATA_DIR', APP_ROOT . '/data');
 if (!defined('UPLOAD_DIR')) define('UPLOAD_DIR', APP_ROOT . '/uploads');
 define('UPLOAD_URL', 'uploads');
@@ -58,8 +74,10 @@ function db(): PDO {
     // Login throttle state (added after first deploy; IF NOT EXISTS so it also applies to the live DB).
     $pdo->exec('CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, fails INT NOT NULL DEFAULT 0, first_at INT NOT NULL DEFAULT 0, locked_until INT NOT NULL DEFAULT 0)');
     migrate_multi_vehicle($pdo);
+    migrate_accounts($pdo);
     $count = (int)$pdo->query('SELECT COUNT(*) FROM vehicle')->fetchColumn();
-    if ($count === 0) {
+    if ($count === 0 && !$pdo->query("SELECT 1 FROM settings WHERE key='seeded'")->fetchColumn()) {
+        $pdo->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('seeded', datetime('now'))");
         require APP_ROOT . '/app/seed/seed.php';
         seed_all($pdo);
     }
@@ -110,6 +128,70 @@ function protect_dir(string $dir): void {
     if (is_dir($dir) && !is_file($f)) @file_put_contents($f, "Require all denied\n<IfModule !mod_authz_core.c>\n  Deny from all\n</IfModule>\nOptions -Indexes\n");
 }
 
+/**
+ * Accounts and showroom imagery (2026-11-08). users: multi-user instances only. vehicle/mechanics/links get user_id
+ * (existing rows belong to user 1, the single owner). Vehicle gets the cut-out / depth / 3D outputs of garage-vision.
+ */
+function migrate_accounts(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE COLLATE NOCASE, pw_hash TEXT, name TEXT, created_at TEXT, last_login TEXT,
+        verified_at TEXT, verify_token TEXT, reset_token TEXT, reset_expires INT, is_admin INT DEFAULT 0)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, n INT NOT NULL DEFAULT 0, window_start INT NOT NULL DEFAULT 0)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS vpic_cache (key TEXT PRIMARY KEY, body TEXT, fetched_at INT)');
+    $cols = fn(string $t) => array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
+    foreach (['vehicle', 'mechanics', 'links'] as $t) if (!in_array('user_id', $cols($t), true)) {
+        $pdo->exec("ALTER TABLE $t ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_{$t}_user ON $t (user_id)");
+    }
+    $vc = $cols('vehicle');
+    foreach (['hero_cutout' => 'TEXT', 'hero_depth' => 'TEXT', 'vision_status' => 'TEXT', 'mesh_glb' => 'TEXT', 'mesh_job' => 'TEXT', 'mesh_status' => 'TEXT'] as $c => $t)
+        if (!in_array($c, $vc, true)) $pdo->exec("ALTER TABLE vehicle ADD COLUMN $c $t");
+}
+
+/** The signed-in account. Single-owner instances are always user 1. */
+function uid(): int { return MULTI_USER ? (int)($_SESSION['uid'] ?? 0) : 1; }
+function current_user(): ?array { return MULTI_USER && uid() ? row('SELECT * FROM users WHERE id=?', [uid()]) : null; }
+function is_admin(): bool { return !MULTI_USER || (bool)(current_user()['is_admin'] ?? false); }
+function owns_vehicle(int $vehicleId): bool { return $vehicleId > 0 && (bool)col('SELECT 1 FROM vehicle WHERE id=? AND user_id=?', [$vehicleId, uid()]); }
+/** Does the signed-in account own row $id of $table? */
+function owns(string $table, int $id): bool {
+    if ($id <= 0) return false;
+    return match (true) {
+        $table === 'issue_notes' => (bool)col('SELECT 1 FROM issue_notes n JOIN issues i ON i.id=n.issue_id JOIN vehicle v ON v.id=i.vehicle_id WHERE n.id=? AND v.user_id=?', [$id, uid()]),
+        in_array($table, ['mechanics', 'links'], true) => (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]),
+        in_array($table, SCOPED, true) => (bool)col("SELECT 1 FROM $table t JOIN vehicle v ON v.id=t.vehicle_id WHERE t.id=? AND v.user_id=?", [$id, uid()]),
+        default => false,
+    };
+}
+/** Keep only the ids (from a form) that belong to the current vehicle. */
+function own_ids(string $table, array $ids): array {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    return array_values(array_filter($ids, fn($i) => (bool)col("SELECT 1 FROM $table WHERE id=? AND " . vw(), [$i])));
+}
+
+/** Simple fixed-window counter: true while under $max events per $window seconds for $key. */
+function rate_ok(string $key, int $max, int $window, bool $count = true): bool {
+    $t = time(); $r = row('SELECT * FROM rate_limits WHERE key=?', [$key]);
+    if (!$r || (int)$r['window_start'] < $t - $window) { $n = 0; $start = $t; } else { $n = (int)$r['n']; $start = (int)$r['window_start']; }
+    if ($n >= $max) return false;
+    if ($count) q('INSERT OR REPLACE INTO rate_limits (key, n, window_start) VALUES (?,?,?)', [$key, $n + 1, $start]);
+    return true;
+}
+
+/** Send an email through Resend. Returns false (never throws) when mail is not configured or fails. */
+function send_mail(string $to, string $subject, string $html): bool {
+    if (MAIL_KEY === '' || MAIL_FROM === '' || !function_exists('curl_init')) return false;
+    $c = curl_init('https://api.resend.com/emails');
+    curl_setopt_array($c, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . MAIL_KEY, 'Content-Type: application/json'],
+        CURLOPT_POSTFIELDS => json_encode(['from' => MAIL_FROM, 'to' => [$to], 'subject' => $subject, 'html' => $html])]);
+    $ok = curl_exec($c) !== false && curl_getinfo($c, CURLINFO_RESPONSE_CODE) < 300;
+    return $ok;
+}
+function base_url(): string {
+    if (BASE_URL !== '') return rtrim(BASE_URL, '/');
+    return (is_https() ? 'https' : 'http') . '://' . preg_replace('/[^A-Za-z0-9.:\-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
+}
+
 function q(string $sql, array $params = []): PDOStatement {
     $st = db()->prepare($sql);
     $st->execute($params);
@@ -123,6 +205,7 @@ function rows(string $sql, array $params = []): array { return q($sql, $params)-
 function col(string $sql, array $params = []) { return q($sql, $params)->fetchColumn(); }
 function insert(string $table, array $data): int {
     if (in_array($table, SCOPED, true) && !array_key_exists('vehicle_id', $data)) $data['vehicle_id'] = vid() ?: 1;
+    if (in_array($table, ['vehicle', 'mechanics', 'links'], true) && !array_key_exists('user_id', $data)) $data['user_id'] = uid() ?: 1;
     $cols = implode(',', array_keys($data));
     $ph = implode(',', array_fill(0, count($data), '?'));
     q("INSERT INTO $table ($cols) VALUES ($ph)", array_values($data));
@@ -138,7 +221,14 @@ function url(string $p, array $qs = []): string {
     $qs = ['p' => $p] + $qs;
     return 'index.php?' . http_build_query($qs);
 }
-function redirect(string $to): never { header('Location: ' . $to); exit; }
+function redirect(string $to): never {
+    // Only ever redirect within this site (a form's "back" field must not send people elsewhere).
+    if (preg_match('~^(?:[a-z][a-z0-9+.-]*:|//|\\\\)~i', $to)) {
+        $host = parse_url($to, PHP_URL_HOST);
+        if (!$host || strcasecmp($host, explode(':', (string)($_SERVER['HTTP_HOST'] ?? ''))[0]) !== 0) $to = 'index.php';
+    }
+    header('Location: ' . $to); exit;
+}
 function flash(?string $msg = null, string $type = 'ok'): ?array {
     if ($msg !== null) { $_SESSION['flash'] = ['msg' => $msg, 'type' => $type]; return null; }
     $f = $_SESSION['flash'] ?? null; unset($_SESSION['flash']); return $f;
@@ -169,14 +259,14 @@ function vid(?int $set = null): int {
     }
     if ($cur !== null) return $cur;
     $want = (int)($_GET['v'] ?? ($_SESSION['vid'] ?? 0));
-    if ($want > 0 && col('SELECT 1 FROM vehicle WHERE id=?', [$want])) return vid($want);
-    $firstId = (int)col('SELECT id FROM vehicle ORDER BY sort, id LIMIT 1');
+    if ($want > 0 && owns_vehicle($want)) return vid($want);
+    $firstId = (int)col('SELECT id FROM vehicle WHERE user_id=? ORDER BY sort, id LIMIT 1', [uid()]);
     return $firstId ? vid($firstId) : 0;
 }
 /** SQL condition for "belongs to the current vehicle", e.g. "WHERE " . vw('i') . " AND ...". */
 function vw(string $alias = ''): string { return ($alias !== '' ? "$alias." : '') . 'vehicle_id=' . vid(); }
 function vehicle(): array { return row('SELECT * FROM vehicle WHERE id=?', [vid()]) ?? []; }
-function vehicles(): array { return rows('SELECT * FROM vehicle ORDER BY sort, id'); }
+function vehicles(): array { return rows('SELECT * FROM vehicle WHERE user_id=? ORDER BY sort, id', [uid()]); }
 function vehicle_name(array $v): string { return trim(($v['year'] ?? '') . ' ' . ($v['make'] ?? '') . ' ' . ($v['model'] ?? '')); }
 const VEHICLE_KINDS = ['car' => 'Car', 'suv' => 'SUV / truck', 'scooter' => 'Scooter / moped', 'motorcycle' => 'Motorcycle'];
 /** Two-wheelers have no OBD-II port and use the simpler checklists. */

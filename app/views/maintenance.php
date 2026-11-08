@@ -3,7 +3,7 @@ if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 $title = 'Maintenance';
 $items = rows('SELECT * FROM maintenance WHERE ' . vw() . ' ORDER BY priority, item');
 $edit = (int)($_GET['edit'] ?? 0);
-$ed = $edit ? row('SELECT * FROM maintenance WHERE id=?', [$edit]) : null;
+$ed = $edit ? row('SELECT * FROM maintenance WHERE id=? AND ' . vw(), [$edit]) : null;
 $order = ['overdue' => 0, 'soon' => 1, 'unknown' => 2, 'ok' => 3];
 $computed = array_map(fn($m) => [$m, ...maintenance_status($m, $miles)], $items);
 usort($computed, fn($a, $b) => ($order[$a[1]] <=> $order[$b[1]]) ?: ($a[0]['priority'] <=> $b[0]['priority']));

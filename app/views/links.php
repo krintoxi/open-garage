@@ -1,14 +1,14 @@
 <?php
 if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 $title = 'Links';
-$list = rows('SELECT * FROM links ORDER BY category, title');
+$list = rows('SELECT * FROM links WHERE user_id IN (0, ?) ORDER BY category, title', [uid()]);
 $groups = []; foreach ($list as $l) $groups[$l['category']][] = $l;
-$edit = (int)($_GET['edit'] ?? 0); $ed = $edit ? row('SELECT * FROM links WHERE id=?', [$edit]) : null;
+$edit = (int)($_GET['edit'] ?? 0); $ed = $edit ? row('SELECT * FROM links WHERE id=? AND user_id=?', [$edit, uid()]) : null;
 ?>
 <div class="head"><div><h1>Links</h1><p>Suppliers, references, forums, the mechanic.</p></div></div>
 <div class="grid g3">
   <div style="grid-column:span 2">
-    <?php foreach ($groups as $cat => $items): ?><div class="card" style="margin-bottom:14px"><h2><?= h($cat) ?></h2><ul class="list"><?php foreach ($items as $l): ?><li><div class="grow"><a class="t" href="<?= h($l['url']) ?>" target="_blank" rel="noopener"><?= h($l['title']) ?> ↗</a><small><?= h($l['notes']) ?></small></div><a class="btn sm ghost" href="<?= url('links', ['edit' => $l['id']]) ?>#edit">edit</a></li><?php endforeach; ?></ul></div><?php endforeach; ?>
+    <?php foreach ($groups as $cat => $items): ?><div class="card" style="margin-bottom:14px"><h2><?= h($cat) ?></h2><ul class="list"><?php foreach ($items as $l): ?><li><div class="grow"><a class="t" href="<?= h($l['url']) ?>" target="_blank" rel="noopener"><?= h($l['title']) ?> ↗</a><small><?= h($l['notes']) ?></small></div><?php if ((int)$l['user_id'] === uid()): ?><a class="btn sm ghost" href="<?= url('links', ['edit' => $l['id']]) ?>#edit">edit</a><?php endif; ?></li><?php endforeach; ?></ul></div><?php endforeach; ?>
   </div>
   <div class="card" id="edit">
     <h2><?= $ed ? 'Edit link' : 'Add link' ?></h2>

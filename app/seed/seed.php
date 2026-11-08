@@ -15,6 +15,7 @@ function seed_all(PDO $pdo): void {
         ];
         $st = $pdo->prepare('INSERT INTO links (title, url, category, notes) VALUES (?,?,?,?)');
         foreach ($links as $l) $st->execute($l);
+        $pdo->exec('UPDATE links SET user_id=0'); // shared starter links: visible to every account, editable by none
         $pdo->commit();
     } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
 }

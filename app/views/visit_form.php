@@ -3,7 +3,7 @@ if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 $id = (int)($_GET['id'] ?? 0);
 $v = $id ? row('SELECT * FROM visits WHERE id=?', [$id]) : null;
 $title = $v ? 'Edit visit' : 'Schedule a visit';
-$mechs = rows('SELECT * FROM mechanics ORDER BY is_primary DESC, name');
+$mechs = rows('SELECT * FROM mechanics WHERE user_id=? ORDER BY is_primary DESC, name', [uid()]);
 $issues = rows("SELECT id, title, severity, status FROM issues WHERE " . vw() . " AND status IN ('open','monitoring','scheduled') ORDER BY severity DESC");
 $linked = $id ? array_column(rows('SELECT issue_id FROM visit_issues WHERE visit_id=?', [$id]), 'issue_id') : [(int)($_GET['issue'] ?? 0)];
 // Already-attached issues that are no longer active (resolved/dismissed): not editable here, and kept on save.

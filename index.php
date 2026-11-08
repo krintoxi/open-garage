@@ -6,13 +6,14 @@ require __DIR__ . '/app/bootstrap.php';
 // machine itself (local dev); from anywhere else it fails closed and shows a "locked" page, so a fresh or
 // reset database never comes up open to the internet. Set the password with app/tools/set-password.php.
 $pwHash = (string)(col("SELECT value FROM settings WHERE key='password_hash'") ?: '');
-if ($pwHash === '' && !is_local_request()) {
+if (!MULTI_USER && $pwHash === '' && !is_local_request()) {
     http_response_code(503);
     header('Retry-After: 3600');
     require APP_ROOT . '/app/views/locked.php';
     exit;
 }
-$authed = $pwHash === '' || hash_equals(auth_tag($pwHash), (string)($_SESSION['authed'] ?? ''));
+$authed = MULTI_USER ? (uid() > 0 && current_user() !== null) : ($pwHash === '' || hash_equals(auth_tag($pwHash), (string)($_SESSION['authed'] ?? '')));
+const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // A body larger than post_max_size arrives with $_POST and $_FILES empty: explain it instead of "Bad token".
@@ -23,6 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($host !== '' && parse_url($ref, PHP_URL_HOST) === explode(':', $host)[0] ? $ref : url($authed ? 'dashboard' : 'login'));
     }
     $action = post('action');
+    if (MULTI_USER && in_array($action, ['login', 'signup', 'forgot', 'reset', 'logout'], true)) { require APP_ROOT . '/app/auth.php'; exit; }
     if ($action === 'login') {
         csrf_check();
         $ip = login_ip();
@@ -37,8 +39,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $page = preg_replace('/[^a-z_]/', '', $_GET['p'] ?? 'dashboard') ?: 'dashboard';
-if (!$authed && $page !== 'login') redirect(url('login'));
-if ($authed && $page === 'login') redirect(url('dashboard'));
+if (!MULTI_USER && in_array($page, ['signup', 'forgot', 'reset', 'verify'], true)) $page = 'login';
+if (!$authed && !in_array($page, PUBLIC_PAGES, true)) redirect(url('login'));
+if ($authed && in_array($page, ['login', 'signup', 'forgot'], true)) redirect(url('dashboard'));
+if (MULTI_USER && $page === 'verify') { require APP_ROOT . '/app/auth.php'; exit; }
+if (in_array($page, ['signup', 'forgot', 'reset'], true)) { require APP_ROOT . '/app/views/' . $page . '.php'; exit; }
 
 // Photos and receipts: streamed from UPLOAD_DIR only to a signed-in browser (never served as static files).
 if ($page === 'file') {
@@ -48,7 +53,13 @@ if ($page === 'file') {
     $path = ($base && preg_match('/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/D', $name)) ? realpath($base . DIRECTORY_SEPARATOR . $name) : false;
     $types = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif', 'pdf' => 'application/pdf'];
     $ext = $path ? strtolower(pathinfo($path, PATHINFO_EXTENSION)) : '';
+    $types += ['png' => 'image/png', 'glb' => 'model/gltf-binary'];
     if (!$path || !str_starts_with($path, $base . DIRECTORY_SEPARATOR) || !is_file($path) || !isset($types[$ext])) { http_response_code(404); exit('Not found'); }
+    // Only the owner's files: a gallery photo of one of their vehicles, or one of the vehicle's showroom images.
+    $stored = UPLOAD_URL . '/' . $name;
+    $mine = col('SELECT 1 FROM photos p JOIN vehicle v ON v.id=p.vehicle_id WHERE p.path=? AND v.user_id=?', [$stored, uid()])
+        || col('SELECT 1 FROM vehicle WHERE user_id=? AND ? IN (photo, hero_cutout, hero_depth, mesh_glb)', [uid(), $stored]);
+    if (!$mine) { http_response_code(404); exit('Not found'); }
     session_write_close();
     header_remove('Pragma'); header_remove('Expires');
     $mtime = (int)filemtime($path);
@@ -64,6 +75,20 @@ if ($page === 'file') {
     exit;
 }
 
+// Year / make / model lists for the Add-vehicle wizard (JSON; signed-in only; cached).
+if ($page === 'vpic') {
+    session_write_close();
+    header('Content-Type: application/json');
+    echo json_encode(vpic_list((string)($_GET['what'] ?? ''), (string)($_GET['kind'] ?? 'car'), (string)($_GET['make'] ?? ''), (int)($_GET['year'] ?? 0)), JSON_UNESCAPED_SLASHES);
+    exit;
+}
+// Showroom image / 3D job status for the dashboard (JSON).
+if ($page === 'vision') {
+    header('Content-Type: application/json');
+    echo json_encode(vision_status_for(vid()), JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 // VIN lookup for the Add-vehicle form (JSON; signed-in only).
 if ($page === 'vin') {
     session_write_close();
@@ -76,6 +101,13 @@ $pages = ['dashboard','issues','issue','issue_form','codes','common','maintenanc
           'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage'];
 if (!in_array($page, $pages, true)) { http_response_code(404); $page = 'dashboard'; }
 
+if ($page === 'export' && MULTI_USER) {
+    // Shared database: export only this account's records, as JSON.
+    header('Content-Type: application/json');
+    header('Content-Disposition: attachment; filename="garage-' . date('Ymd') . '.json"');
+    echo json_encode(account_export(uid()), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($page === 'export') {
     $f = DATA_DIR . '/garage.sqlite';
     db()->exec('PRAGMA wal_checkpoint(TRUNCATE)');
@@ -88,7 +120,10 @@ if ($page === 'export') {
 // No vehicle yet (fresh install): everything starts at the Garage page's "Add a vehicle" form.
 if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links'], true)) redirect(url('garage') . '#add');
 $follow = ['issue' => 'issues', 'issue_form' => 'issues', 'visit' => 'visits', 'visit_form' => 'visits', 'inspection' => 'inspections', 'brief' => 'visits'];
-if (isset($follow[$page]) && ($rid = (int)($_GET['id'] ?? 0)) && ($rv = (int)col("SELECT vehicle_id FROM {$follow[$page]} WHERE id=?", [$rid]))) vid($rv);
+if (isset($follow[$page]) && ($rid = (int)($_GET['id'] ?? 0))) {
+    if (!owns($follow[$page], $rid)) { http_response_code(404); $page = 'garage'; }
+    else vid((int)col("SELECT vehicle_id FROM {$follow[$page]} WHERE id=?", [$rid]));
+}
 $veh = vehicle();
 $miles = current_miles();
 $title = 'Garage';

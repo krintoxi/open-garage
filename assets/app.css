@@ -51,7 +51,7 @@ nav .ico{width:20px;text-align:center;opacity:.85}nav .pill{margin-left:auto;bac
 table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;font-family:var(--head);text-transform:uppercase;letter-spacing:.06em;font-size:12px;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--border2)}
 td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}tr:hover td{background:rgba(255,255,255,.015)}td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
 input,select,textarea,button{font:inherit;color:var(--text)}
-input[type=text],input[type=number],input[type=date],input[type=url],input[type=password],input[type=search],select,textarea{width:100%;background:#0a0c10;border:1px solid var(--border2);border-radius:9px;padding:8px 10px;outline:none}
+input[type=text],input[type=email],input[type=number],input[type=date],input[type=url],input[type=password],input[type=search],select,textarea{width:100%;background:#0a0c10;border:1px solid var(--border2);border-radius:9px;padding:8px 10px;outline:none}
 input:focus,select:focus,textarea:focus{border-color:#4a5468;box-shadow:0 0 0 3px rgba(201,207,219,.08)}
 textarea{min-height:90px;resize:vertical;line-height:1.45}select{appearance:auto}
 label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:10px 0 4px}label.inline{display:inline-flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);margin:4px 12px 4px 0}
@@ -198,3 +198,50 @@ input.mini,select.mini{padding:4px 6px;font-size:12px}select.mini{width:auto}
   .stage-hero .stage-car{top:60%}
   .stage-hero .stage-note{bottom:52px}
 }
+/* Signed-out pages */
+body.auth .login{display:flex;gap:40px;align-items:center;justify-content:center;flex-wrap:wrap;min-height:100vh;padding:24px}
+.auth-pitch{max-width:440px}.auth-pitch h1{font-family:var(--head);font-size:44px;text-transform:uppercase;line-height:1;margin:0 0 12px}
+.auth-pitch p{color:var(--silver);font-size:17px;line-height:1.55}.auth-pitch ul{padding-left:1.1em;color:var(--muted);line-height:1.8}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+/* Add-vehicle wizard */
+.wizard h2{margin-bottom:6px}
+.wz-steps{display:flex;gap:8px;list-style:none;padding:0;margin:0 0 16px;counter-reset:s}
+.wz-steps li{flex:1;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);border-top:3px solid var(--border2);padding-top:6px;counter-increment:s}
+.wz-steps li::before{content:counter(s) ". "}.wz-steps li.on{color:var(--text);border-color:var(--accent)}
+.kind-pick,.quick-pick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.kind-pick label,.quick-pick label{position:relative;cursor:pointer}
+.kind-pick input,.quick-pick input{position:absolute;opacity:0;pointer-events:none}
+.kind-pick span,.quick-pick span{display:inline-block;padding:10px 14px;border-radius:12px;border:1px solid var(--border2);background:var(--panel2);font-size:15px;min-height:44px;line-height:22px}
+.kind-pick input:checked+span,.quick-pick input:checked+span{border-color:var(--accent);background:var(--accent-soft);color:#fff}
+.kind-pick input:focus-visible+span,.quick-pick input:focus-visible+span{outline:2px solid var(--silver);outline-offset:2px}
+.wz-tabs{display:flex;gap:6px;margin-bottom:12px}
+.wz-tabs button{flex:1;padding:9px;border-radius:10px;background:var(--panel2);border:1px solid var(--border2);color:var(--muted)}
+.wz-tabs button.on{color:#fff;border-color:var(--silver)}
+.wz-nav{margin-top:16px;gap:8px}
+.snap{position:relative;display:grid;place-items:center;min-height:220px;border:2px dashed var(--border2);border-radius:16px;cursor:pointer;text-align:center;padding:18px;background:radial-gradient(400px 200px at 50% 100%,#161c28,transparent)}
+.snap input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.snap b{display:block;font-size:20px;margin-bottom:6px}.snap small{color:var(--muted);max-width:420px;display:block}
+.snap img{max-width:100%;max-height:320px;border-radius:12px}
+/* Cut-out "3D photo" on the stage */
+.stage-3dphoto{display:block;width:100%;height:auto;max-height:380px;object-fit:contain;filter:drop-shadow(0 26px 22px rgba(0,0,0,.75)) drop-shadow(0 0 30px rgba(225,6,0,.12))}
+.stage-cutout{display:block;width:100%;max-height:380px;object-fit:contain;filter:drop-shadow(0 26px 22px rgba(0,0,0,.75))}
+.stage-reflect img.cut{border-radius:0;object-fit:contain;max-height:380px}
+.is-cutout .stage-car{top:58%}
+.mesh-viewer{position:absolute;inset:0;background:radial-gradient(900px 420px at 50% 100%,#1d2433,#07080a 62%);z-index:5;display:flex;flex-direction:column}
+.mesh-viewer canvas{flex:1;width:100%;height:100%;display:block}
+.mesh-viewer [data-close]{position:absolute;top:14px;right:16px}.mesh-viewer small{position:absolute;left:16px;bottom:10px;color:var(--dim);font-size:11px}
+/* Menu: main items + "More" */
+.nav-more summary{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;color:var(--muted);font-weight:500;font-size:14px;cursor:pointer;list-style:none}
+.nav-more summary::-webkit-details-marker{display:none}.nav-more summary:hover{background:var(--panel2);color:var(--text)}
+.nav-more[open] summary{color:var(--text)}.nav-more a{padding-left:20px}
+@media(max-width:800px){.nav-more{display:contents}.nav-more summary{white-space:nowrap}.nav-more:not([open]) a{display:none}.nav-more a{padding-left:10px}}
+.is-cutout .stage-car{width:auto;display:flex;flex-direction:column;align-items:center}
+.is-cutout .stage-3dphoto,.is-cutout .stage-cutout{width:auto;max-width:84vw;max-height:62%}
+.is-cutout .stage-cutout{max-height:285px}
+.is-cutout .stage-reflect{position:static;margin-top:-2px;display:flex;justify-content:center;opacity:.14}
+.is-cutout .stage-reflect img.cut{width:auto;max-height:285px;max-width:84vw}
+.nav-more{border:0;padding:0;margin:0;background:none}
+@media(max-width:800px){.is-cutout .stage-cutout,.is-cutout .stage-reflect img.cut{max-height:200px}}
+.stage-hero [hidden]{display:none!important}
+.is-cutout .stage-reflect{position:absolute;left:0;right:0;top:100%;margin-top:0}
+.vcard-art img.cut{object-fit:contain;filter:drop-shadow(0 14px 12px rgba(0,0,0,.7))}

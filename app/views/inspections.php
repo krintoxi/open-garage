@@ -3,7 +3,7 @@ if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 $title = 'Weekly checks';
 $insps = rows('SELECT i.*, (SELECT COUNT(*) FROM inspection_results r WHERE r.inspection_id=i.id AND r.result=\'fail\') fails, (SELECT COUNT(*) FROM inspection_results r WHERE r.inspection_id=i.id AND r.result=\'warn\') warns, (SELECT COUNT(*) FROM inspection_results r WHERE r.inspection_id=i.id AND r.result=\'ok\') oks FROM inspections i WHERE ' . vw('i') . ' ORDER BY done_on DESC, id DESC');
 $checks = rows('SELECT * FROM checks WHERE ' . vw() . ' ORDER BY active DESC, category, sort, id');
-$edit = (int)($_GET['edit'] ?? 0); $ed = $edit ? row('SELECT * FROM checks WHERE id=?', [$edit]) : null;
+$edit = (int)($_GET['edit'] ?? 0); $ed = $edit ? row('SELECT * FROM checks WHERE id=? AND ' . vw(), [$edit]) : null;
 ?>
 <div class="head"><div><h1>Weekly checks & inspections</h1><p>A five-minute walk-around with the hood up. Log it, and failed checks become issues.</p></div><a class="btn primary" href="<?= url('inspection_new') ?>">Start a check</a></div>
 <div class="grid g3">

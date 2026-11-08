@@ -93,19 +93,111 @@ document.querySelectorAll('table').forEach(t => {
   });
 })();
 
-// Add-vehicle form: decode the VIN (NHTSA) and fill the boxes.
+// Add-vehicle wizard: 1 what you drive (pick or VIN), 2 photo, 3 what's going on.
 (() => {
   const form = document.querySelector('[data-vehicle-add]'); if (!form) return;
-  const vin = form.querySelector('[data-vin]'), btn = form.querySelector('[data-vin-lookup]'), out = form.querySelector('[data-vin-result]');
-  const set = (n, v) => { const f = form.elements[n]; if (f && v) f.value = v; };
-  btn.addEventListener('click', async () => {
-    const v = vin.value.trim().toUpperCase(); out.className = 'vin-result muted'; out.textContent = 'Looking up…';
-    try {
-      const r = await (await fetch('index.php?p=vin&vin=' + encodeURIComponent(v), { credentials: 'same-origin' })).json();
-      if (r.error && !r.make) { out.className = 'vin-result err'; out.textContent = r.error; return; }
-      ['year', 'make', 'model', 'trim', 'engine', 'transmission', 'kind'].forEach(k => set(k, r[k]));
-      out.className = 'vin-result ok';
-      out.textContent = 'Found: ' + [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ') + (r.body ? ' · ' + r.body : '') + (r.engine ? ' · ' + r.engine : '') + (r.plant ? ' · built in ' + r.plant : '') + '. Check the boxes below, then add.';
-    } catch (e) { out.className = 'vin-result err'; out.textContent = 'Could not reach the VIN service. Fill the boxes in yourself.'; }
+  const $ = s => form.querySelector(s), $$ = s => [...form.querySelectorAll(s)];
+  const steps = $$('.wz-step'), dots = [...document.querySelectorAll('.wz-steps li')];
+  let cur = 1;
+  const show = (n, scroll = true) => {
+    cur = n;
+    steps.forEach(s => { s.hidden = +s.dataset.step !== n; });
+    dots.forEach(d => d.classList.toggle('on', +d.dataset.dot <= n));
+    if (scroll) form.closest('.wizard').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  };
+  const kind = () => (form.querySelector('[name=kind]:checked') || {}).value || 'car';
+  const two = () => ['scooter', 'motorcycle'].includes(kind());
+  const makeSel = $('[data-make]'), makeTxt = $('[data-make-text]'), modelSel = $('[data-model]'), modelTxt = $('[data-model-text]'), yearSel = $('[data-year]');
+  const opt = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t ?? v; return o; };
+  const getJSON = u => fetch(u, { credentials: 'same-origin' }).then(r => r.json());
+
+  function resetModels(msg) {
+    modelSel.replaceChildren(opt('', msg || 'Pick year and make first'));
+    modelSel.disabled = true; modelTxt.hidden = true; modelTxt.value = '';
+  }
+  async function loadMakes() {
+    const r = await getJSON('index.php?p=vpic&what=makes&kind=' + kind()).catch(() => ({ makes: [] }));
+    makeSel.replaceChildren(opt('', 'Make'), ...r.makes.map(m => opt(m)), opt('__other', 'Other / not listed…'));
+    makeTxt.hidden = true; makeTxt.value = ''; resetModels();
+  }
+  async function loadModels() {
+    const make = makeSel.value === '__other' ? makeTxt.value.trim() : makeSel.value, year = yearSel.value;
+    if (!make || !year) return resetModels();
+    resetModels('Loading models…');
+    const r = await getJSON(`index.php?p=vpic&what=models&kind=${kind()}&make=${encodeURIComponent(make)}&year=${year}`).catch(() => ({ models: [] }));
+    modelSel.replaceChildren(opt('', r.models.length ? 'Model' : 'No list for this one; type it'), ...r.models.map(m => opt(m)), opt('__other', 'Other / not listed…'));
+    modelSel.disabled = false;
+    if (!r.models.length) { modelSel.value = '__other'; modelTxt.hidden = false; }
+  }
+  makeSel.addEventListener('change', () => {
+    makeTxt.hidden = makeSel.value !== '__other';
+    if (makeSel.value !== '__other') makeTxt.value = makeSel.value; else { makeTxt.value = ''; makeTxt.focus(); }
+    loadModels();
   });
+  makeTxt.addEventListener('change', loadModels);
+  yearSel.addEventListener('change', loadModels);
+  modelSel.addEventListener('change', () => {
+    modelTxt.hidden = modelSel.value !== '__other';
+    if (modelSel.value !== '__other') modelTxt.value = modelSel.value; else { modelTxt.value = ''; modelTxt.focus(); }
+  });
+  const syncKind = () => {
+    $$('.quick-pick [data-car-only="1"]').forEach(l => { l.hidden = two(); if (two()) l.querySelector('input').checked = false; });
+  };
+  $$('[name=kind]').forEach(r => r.addEventListener('change', () => { loadMakes(); syncKind(); }));
+
+  // Tabs: pick from a list, or the VIN
+  $$('.wz-tabs button').forEach(b => b.addEventListener('click', () => {
+    $$('.wz-tabs button').forEach(x => x.classList.toggle('on', x === b));
+    $$('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== b.dataset.tab; });
+  }));
+
+  // VIN lookup fills everything it can
+  const vin = $('[data-vin]'), out = $('[data-vin-result]');
+  $('[data-vin-lookup]').addEventListener('click', async () => {
+    out.className = 'vin-result muted'; out.textContent = 'Looking up…';
+    try {
+      const r = await getJSON('index.php?p=vin&vin=' + encodeURIComponent(vin.value.trim().toUpperCase()));
+      if (r.error && !r.make) { out.className = 'vin-result err'; out.textContent = r.error; return; }
+      if (r.kind) { const k = form.querySelector(`[name=kind][value="${r.kind}"]`); if (k) { k.checked = true; syncKind(); } }
+      ['trim', 'engine', 'transmission'].forEach(k => { if (r[k]) form.elements[k].value = r[k]; });
+      if (r.year) yearSel.value = r.year;
+      makeSel.replaceChildren(opt('__other', r.make || 'Make')); makeTxt.hidden = false; makeTxt.value = r.make || '';
+      modelSel.replaceChildren(opt('__other', r.model || 'Model')); modelSel.disabled = false; modelTxt.hidden = false; modelTxt.value = r.model || '';
+      out.className = 'vin-result ok';
+      out.textContent = 'Found: ' + [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ') + (r.engine ? ' · ' + r.engine : '') + '. Tap Next.';
+    } catch (e) {
+      out.className = 'vin-result err'; out.textContent = 'Could not reach the VIN service. Pick it from the list instead.';
+    }
+  });
+
+  // Photo preview
+  const photo = $('[data-photo]'), prev = $('[data-preview]');
+  photo.addEventListener('change', () => {
+    const f = photo.files[0]; if (!f) return;
+    if (/^image\/(jpeg|png|webp|gif)$/.test(f.type)) { prev.src = URL.createObjectURL(f); prev.hidden = false; form.querySelector('.snap-empty').hidden = true; }
+    else form.querySelector('.snap-empty b').textContent = '📷 ' + f.name + ' (ready)';
+    $('[data-skip]').hidden = true; $('[data-photo-next]').hidden = false;
+  });
+
+  // Navigation, with a light check on step 1
+  $$('[data-next]').forEach(b => b.addEventListener('click', () => {
+    if (cur === 1) {
+      if (makeSel.value && makeSel.value !== '__other') makeTxt.value = makeSel.value;
+      if (modelSel.value && modelSel.value !== '__other') modelTxt.value = modelSel.value;
+      if (!makeTxt.value.trim() || !modelTxt.value.trim()) {
+        if (!makeTxt.value.trim() && makeSel.value === '__other') makeTxt.hidden = false;
+        if (!modelSel.disabled) modelTxt.hidden = modelSel.value !== '__other' && !!modelSel.value;
+        alert('Pick (or type) the make and model first.');
+        return;
+      }
+    }
+    show(cur + 1);
+  }));
+  $$('[data-back]').forEach(b => b.addEventListener('click', () => show(cur - 1)));
+  form.addEventListener('submit', () => {
+    const btn = form.querySelector('[type=submit]');
+    btn.disabled = true;
+    btn.textContent = photo.files.length ? 'Adding… making your showroom photo' : 'Adding…';
+  });
+  show(1, false); loadMakes(); syncKind();
 })();

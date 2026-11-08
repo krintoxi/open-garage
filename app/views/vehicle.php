@@ -1,11 +1,11 @@
 <?php
 if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 $title = 'Vehicle & settings';
-$mechs = rows('SELECT * FROM mechanics ORDER BY is_primary DESC, name');
-$editM = (int)($_GET['mech'] ?? 0); $em = $editM ? row('SELECT * FROM mechanics WHERE id=?', [$editM]) : null;
+$mechs = rows('SELECT * FROM mechanics WHERE user_id=? ORDER BY is_primary DESC, name', [uid()]);
+$editM = (int)($_GET['mech'] ?? 0); $em = $editM ? row('SELECT * FROM mechanics WHERE id=? AND user_id=?', [$editM, uid()]) : null;
 $hasPw = (bool)col("SELECT value FROM settings WHERE key='password_hash'");
 ?>
-<div class="head"><div><h1>Vehicle & settings</h1><p>Facts about this vehicle, your mechanics, and app settings. Add or switch vehicles in the <a href="<?= url('garage') ?>">Garage</a>.</p></div><a class="btn" href="<?= url('export') ?>">Download database backup</a></div>
+<div class="head"><div><h1>Vehicle & settings</h1><p>Facts about this vehicle, your mechanics, and app settings. Add or switch vehicles in the <a href="<?= url('garage') ?>">Garage</a>.</p></div><?php if (!MULTI_USER): ?><a class="btn" href="<?= url('export') ?>">Download database backup</a><?php endif; ?></div>
 <div class="grid g3">
   <div style="grid-column:span 2">
     <form method="post" enctype="multipart/form-data" class="card"><input type="hidden" name="action" value="vehicle_save"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
@@ -25,6 +25,7 @@ $hasPw = (bool)col("SELECT value FROM settings WHERE key='password_hash'");
     </form>
     <div class="row" style="margin-top:8px;gap:8px">
     <?php if ($veh['photo']): ?><form method="post"><input type="hidden" name="action" value="vehicle_photo_clear"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button class="sm ghost">Clear main photo</button></form><?php endif; ?>
+    <?php if (VISION_URL !== '' && $veh['photo'] && !$veh['photo_credit']): ?><form method="post"><input type="hidden" name="action" value="vision_redo"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button class="sm"><?= $veh['hero_cutout'] ? 'Redo showroom photo' : 'Make showroom photo' ?></button></form><?php if ($veh['hero_cutout']): ?><form method="post"><input type="hidden" name="action" value="vision_original"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button class="sm ghost">Show my original photo instead</button></form><?php endif; ?><?php endif; ?>
     <?php if (!$veh['photo']): ?><form method="post"><input type="hidden" name="action" value="vehicle_stock_photo"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button class="sm ghost">Find a stand-in photo online</button></form><?php endif; ?>
     </div>
     <?php if (count(vehicles()) > 1): ?>
@@ -52,6 +53,21 @@ $hasPw = (bool)col("SELECT value FROM settings WHERE key='password_hash'");
       </form>
       <?php if ($em): ?><form method="post" class="right" style="margin-top:8px"><input type="hidden" name="action" value="mechanic_delete"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="id" value="<?= $em['id'] ?>"><button class="sm ghost danger" data-confirm="Remove this mechanic?">Remove</button></form><?php endif; ?>
     </div>
+    <?php if (MULTI_USER): $me = current_user(); ?>
+    <div class="card" style="margin-top:18px" id="access">
+      <h2>Your account</h2>
+      <p class="muted" style="font-size:13.5px">Signed in as <b><?= h($me['email'] ?? '') ?></b><?= empty($me['verified_at']) ? ' (email not confirmed yet)' : '' ?>.</p>
+      <form method="post"><input type="hidden" name="action" value="account_password"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
+        <label>Current password</label><input type="password" name="current_password" autocomplete="current-password" required>
+        <label>New password (at least 8 characters)</label><input type="password" name="password" autocomplete="new-password" minlength="8" required>
+        <label>New password again</label><input type="password" name="password2" autocomplete="new-password" minlength="8" required>
+        <div class="row end" style="margin-top:8px"><button type="submit">Change password</button></div></form>
+      <div class="row" style="margin-top:10px;gap:8px"><a class="btn sm" href="<?= url('export') ?>">Download all my data</a><form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button class="sm ghost">Log out</button></form></div>
+      <details id="account" style="margin-top:14px"><summary class="muted">Delete my account</summary>
+        <form method="post" style="margin-top:8px"><input type="hidden" name="action" value="account_delete"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><p class="muted" style="font-size:13px">Deletes every vehicle, record and photo in this account. It cannot be undone.</p><label>Password</label><input type="password" name="current_password" required><div class="row end" style="margin-top:8px"><button class="sm danger" data-confirm="Delete your account and everything in it?">Delete account</button></div></form>
+      </details>
+    </div>
+    <?php else: ?>
     <div class="card" style="margin-top:18px" id="access">
       <h2>Access</h2>
       <p class="muted" style="font-size:13.5px"><?= $hasPw ? 'Password protection is ON for ' . h((string)($_SERVER['HTTP_HOST'] ?? 'this site')) . '. Changing it signs out your other devices. Log out is also in the menu (top right on a phone).' : 'No password set: the app only opens on this computer. Set one before hosting it.' ?></p>
@@ -62,5 +78,6 @@ $hasPw = (bool)col("SELECT value FROM settings WHERE key='password_hash'");
         <div class="row end" style="margin-top:8px"><button type="submit"><?= $hasPw ? 'Change password' : 'Set password' ?></button></div></form>
       <?php if ($hasPw): ?><form method="post" style="margin-top:8px"><input type="hidden" name="action" value="logout"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button class="sm ghost">Log out</button></form><?php endif; ?>
     </div>
+    <?php endif; ?>
   </div>
 </div>

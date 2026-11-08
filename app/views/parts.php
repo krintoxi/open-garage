@@ -2,7 +2,7 @@
 if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 $title = 'Parts & upgrades';
 $list = rows("SELECT p.*, i.title ititle FROM parts p LEFT JOIN issues i ON i.id=p.issue_id WHERE " . vw('p') . " ORDER BY CASE p.status WHEN 'wanted' THEN 0 WHEN 'ordered' THEN 1 WHEN 'on hand' THEN 2 ELSE 3 END, p.category, p.name");
-$edit = (int)($_GET['edit'] ?? 0); $ed = $edit ? row('SELECT * FROM parts WHERE id=?', [$edit]) : null;
+$edit = (int)($_GET['edit'] ?? 0); $ed = $edit ? row('SELECT * FROM parts WHERE id=? AND ' . vw(), [$edit]) : null;
 // Unresolved issues, plus the one this part is already for (even if resolved) so saving the form keeps the link.
 $issues = rows("SELECT id, title, status FROM issues WHERE " . vw() . " AND (status<>'resolved' OR id=?) ORDER BY CASE status WHEN 'resolved' THEN 1 ELSE 0 END, severity DESC", [(int)($ed['issue_id'] ?? 0)]);
 $statuses = ['wanted', 'ordered', 'on hand', 'installed'];

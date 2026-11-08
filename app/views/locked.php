@@ -1,7 +1,7 @@
 <?php
 if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Garage · Locked</title>
-<link rel="stylesheet" href="assets/app.css?v=7"></head>
+<link rel="stylesheet" href="assets/app.css?v=11"></head>
 <body><div class="login"><div class="card">
 <h1 style="font-size:24px">✦ Garage</h1>
 <p><b>This garage is locked: no password has been set.</b></p>

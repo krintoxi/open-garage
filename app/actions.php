@@ -6,6 +6,19 @@ csrf_check();
 $action = post('action');
 $id = post_int('id');
 
+// Every action that names a record by id must name one of this account's records.
+const OWNED_BY_ACTION = [
+    'issue_save' => 'issues', 'issue_status' => 'issues', 'issue_delete' => 'issues', 'issue_note_add' => 'issues', 'note_delete' => 'issue_notes',
+    'photo_delete' => 'photos', 'photo_caption' => 'photos', 'code_event_status' => 'code_events', 'code_event_delete' => 'code_events',
+    'common_status' => 'common_issues', 'common_to_issue' => 'common_issues', 'maint_save' => 'maintenance', 'maint_done' => 'maintenance', 'maint_delete' => 'maintenance',
+    'check_save' => 'checks', 'check_toggle' => 'checks', 'inspection_delete' => 'inspections', 'visit_save' => 'visits', 'visit_complete' => 'visits',
+    'visit_signoff' => 'visits', 'visit_delete' => 'visits', 'part_save' => 'parts', 'part_status' => 'parts', 'part_delete' => 'parts',
+    'mileage_delete' => 'mileage_log', 'mechanic_save' => 'mechanics', 'mechanic_delete' => 'mechanics', 'link_save' => 'links', 'link_delete' => 'links',
+];
+if ($id && isset(OWNED_BY_ACTION[$action]) && !owns(OWNED_BY_ACTION[$action], $id)) { http_response_code(404); exit('Not found'); }
+// Everything below works on the current vehicle; a new account has none until it adds one.
+if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
+
 switch ($action) {
 
 case 'logout':
@@ -15,7 +28,25 @@ case 'logout':
     flash('Signed out.');
     redirect(url('login'));
 
+case 'account_password':
+    // Multi-user: change this account's password.
+    $u = current_user();
+    if (!$u || !password_verify(post('current_password'), $u['pw_hash'])) { flash('Current password is wrong. Nothing changed.', 'err'); redirect(url('vehicle') . '#access'); }
+    if (mb_strlen(post('password')) < 8 || post('password') !== post('password2')) { flash('New passwords must match and be at least 8 characters. Nothing changed.', 'err'); redirect(url('vehicle') . '#access'); }
+    q('UPDATE users SET pw_hash=? WHERE id=?', [password_hash(post('password'), PASSWORD_DEFAULT), $u['id']]);
+    flash('Password changed.'); redirect(url('vehicle'));
+
+case 'account_delete':
+    // Multi-user: delete the account and everything in it.
+    $u = current_user();
+    if (!$u || !password_verify(post('current_password'), $u['pw_hash'])) { flash('Password is wrong. Nothing was deleted.', 'err'); redirect(url('vehicle') . '#account'); }
+    foreach (rows('SELECT id FROM vehicle WHERE user_id=?', [$u['id']]) as $dv) delete_vehicle((int)$dv['id']);
+    q('DELETE FROM mechanics WHERE user_id=?', [$u['id']]); q('DELETE FROM links WHERE user_id=?', [$u['id']]); q('DELETE FROM users WHERE id=?', [$u['id']]);
+    $_SESSION = []; session_regenerate_id(true);
+    flash('Your account and everything in it were deleted.'); redirect(url('login'));
+
 case 'set_password':
+    if (MULTI_USER) { http_response_code(400); exit('Unknown action'); }
     // Change only. An empty field never removes protection (the live site would then be locked anyway);
     // a forgotten password is reset from the server with app/tools/set-password.php.
     $cur = (string)(col("SELECT value FROM settings WHERE key='password_hash'") ?: '');
@@ -62,12 +93,13 @@ case 'vehicle_save':
     update('vehicle', $data, (int)$v['id']);
     if (!empty($_FILES['photo']['name'])) {
         $pid = save_upload($_FILES['photo'], 'vehicle', (int)$v['id'], 'hero', 'Hero photo');
-        if ($pid) { $p = row('SELECT path FROM photos WHERE id=?', [$pid]); update('vehicle', ['photo' => $p['path'], 'photo_credit' => null], (int)$v['id']); }
+        if ($pid) { $p = row('SELECT path FROM photos WHERE id=?', [$pid]); update('vehicle', ['photo' => $p['path'], 'photo_credit' => null, 'hero_cutout' => null, 'hero_depth' => null, 'mesh_glb' => null, 'mesh_status' => null], (int)$v['id']); vision_process((int)$v['id']); }
         elseif ($e = flash()) { flash('Vehicle saved, but the photo was not: ' . $e['msg'], 'err'); redirect(url('vehicle')); }
     }
     flash('Vehicle saved.'); redirect(url('vehicle'));
 
 case 'vehicle_add':
+    if (MULTI_USER && count(vehicles()) >= LIMIT_VEHICLES) { flash('This account can hold up to ' . LIMIT_VEHICLES . ' vehicles.', 'err'); redirect(url('garage')); }
     $kind = array_key_exists(post('kind'), VEHICLE_KINDS) ? post('kind') : 'car';
     if (post('make') === '' || post('model') === '') { flash('Make and model are required.', 'err'); redirect(url('garage') . '#add'); }
     $miles = post_int('miles') ?? 0;
@@ -78,10 +110,11 @@ case 'vehicle_add':
     vid($nid); // everything below (and the next page) belongs to the new vehicle
     if ($miles > 0) insert('mileage_log', ['logged_at' => today(), 'miles' => $miles, 'note' => 'Added to the garage']);
     seed_vehicle_templates($nid, $kind);
+    $quick = add_quick_issues($nid, $kind, (array)($_POST['quick'] ?? []), $miles);
     $msg = vehicle_name($data) . ' added. A starter maintenance schedule and weekly checklist are in place; adjust them to the owner\'s manual.';
     if (!empty($_FILES['photo']['name'])) {
         $pid = save_upload($_FILES['photo'], 'vehicle', $nid, 'hero', 'Hero photo');
-        if ($pid) update('vehicle', ['photo' => col('SELECT path FROM photos WHERE id=?', [$pid])], $nid);
+        if ($pid) { update('vehicle', ['photo' => col('SELECT path FROM photos WHERE id=?', [$pid])], $nid); vision_process($nid); }
         elseif ($e = flash()) $msg .= ' The photo was not saved: ' . $e['msg'];
     } elseif ($stock = find_stock_photo($data)) {
         insert('photos', ['kind' => 'vehicle', 'ref_id' => $nid, 'stage' => 'stock', 'path' => $stock['path'], 'caption' => $stock['credit'], 'taken_on' => today(), 'created_at' => now()]);
@@ -90,7 +123,27 @@ case 'vehicle_add':
     } else {
         $msg .= ' No matching photo online, so it shows a drawing in its colours until you add a photo.';
     }
+    if ($quick) $msg .= ' ' . $quick . ' issue' . ($quick === 1 ? '' : 's') . ' added from your answers.';
     flash($msg); redirect(url('dashboard', ['v' => $nid]));
+
+case 'vision_redo':
+    // (Re)make the cut-out + depth showroom image from the main photo.
+    $v = vehicle();
+    if (!$v['photo'] || $v['photo_credit']) { flash('Add your own photo first.', 'err'); redirect(url('vehicle') . '#photo'); }
+    $r = vision_process((int)$v['id'], true);
+    flash($r === 'ready' ? 'Showroom image updated.' : ($r === 'limit' ? 'Daily limit for image processing reached; try again tomorrow.' : 'The image service is busy or offline; it will retry automatically.'), $r === 'ready' ? 'ok' : 'err');
+    redirect(url('dashboard'));
+
+case 'vision_original':
+    // Go back to showing the plain photo (keeps the cut-out files for "redo").
+    update('vehicle', ['hero_cutout' => null, 'hero_depth' => null, 'vision_status' => 'off'], vid());
+    flash('Showing your original photo.'); redirect(url('dashboard'));
+
+case 'mesh_start':
+    $r = mesh_start(vid());
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) { header('Content-Type: application/json'); echo json_encode(['status' => $r]); exit; }
+    flash($r === 'running' ? 'Building a 3D model from your photo. This takes about a minute; you can keep using the app.' : ($r === 'limit' ? 'Daily limit for image processing reached.' : 'The 3D service is busy or offline right now. Try again later.'), $r === 'running' ? 'ok' : 'err');
+    redirect(url('dashboard'));
 
 case 'vehicle_stock_photo':
     $v = vehicle();
@@ -103,16 +156,9 @@ case 'vehicle_stock_photo':
 
 case 'vehicle_delete':
     $v = vehicle();
-    if (count(vehicles()) < 2) { flash('This is the only vehicle; add another before deleting it.', 'err'); redirect(url('vehicle')); }
+    if (!MULTI_USER && count(vehicles()) < 2) { flash('This is the only vehicle; add another before deleting it.', 'err'); redirect(url('vehicle')); }
     if (mb_strtolower(trim(post('confirm_name'))) !== mb_strtolower(trim((string)$v['model']))) { flash('Type the model name exactly to confirm. Nothing was deleted.', 'err'); redirect(url('vehicle') . '#danger'); }
-    $vidDel = (int)$v['id'];
-    $paths = array_column(rows('SELECT path FROM photos WHERE vehicle_id=?', [$vidDel]), 'path');
-    q('DELETE FROM issue_notes WHERE issue_id IN (SELECT id FROM issues WHERE vehicle_id=?)', [$vidDel]);
-    q('DELETE FROM visit_issues WHERE visit_id IN (SELECT id FROM visits WHERE vehicle_id=?) OR issue_id IN (SELECT id FROM issues WHERE vehicle_id=?)', [$vidDel, $vidDel]);
-    q('DELETE FROM inspection_results WHERE inspection_id IN (SELECT id FROM inspections WHERE vehicle_id=?)', [$vidDel]);
-    foreach (SCOPED as $t) q("DELETE FROM $t WHERE vehicle_id=?", [$vidDel]);
-    q('DELETE FROM vehicle WHERE id=?', [$vidDel]);
-    foreach ($paths as $pth) if (!(int)col('SELECT COUNT(*) FROM photos WHERE path=?', [$pth])) { $f = UPLOAD_DIR . '/' . basename((string)$pth); if (is_file($f)) @unlink($f); }
+    delete_vehicle((int)$v['id']);
     unset($_SESSION['vid']);
     flash(vehicle_name($v) . ' and all its records were deleted.'); redirect(url('garage'));
 
@@ -135,6 +181,7 @@ case 'issue_save':
     $data['opened_on'] = post('opened_on') ?: today();
     $data['resolved_on'] = post('resolved_on') ?: null;
     $data['caused_by_visit_id'] = post_int('caused_by_visit_id');
+    if ($data['caused_by_visit_id'] && !owns('visits', $data['caused_by_visit_id'])) $data['caused_by_visit_id'] = null;
     if (!in_array($data['status'], ISSUE_STATUSES, true)) $data['status'] = 'open';
     if ($data['status'] === 'resolved' && !$data['resolved_on']) $data['resolved_on'] = today();
     if ($data['status'] !== 'resolved') $data['resolved_on'] = null; // reopening clears the old fix date
@@ -168,6 +215,9 @@ case 'note_delete':
 
 case 'photo_add':
     $kind = post('kind'); $ref = post_int('ref_id') ?? 0; $stage = post('stage') ?: 'general';
+    $refTable = ['issue' => 'issues', 'visit' => 'visits', 'inspection' => 'inspections'][$kind] ?? null;
+    if ($refTable ? !owns($refTable, $ref) : !owns_vehicle($ref)) { $kind = 'vehicle'; $ref = vid(); }
+    if (MULTI_USER && (int)col('SELECT COUNT(*) FROM photos p JOIN vehicle v ON v.id=p.vehicle_id WHERE v.user_id=?', [uid()]) >= LIMIT_PHOTOS) { flash('This account has reached its photo limit (' . LIMIT_PHOTOS . '). Delete some to add more.', 'err'); redirect(post('back') ?: url('photos')); }
     $n = 0; $errs = []; $capNote = '';
     // PHP silently drops every file past max_file_uploads; if the batch is exactly at the limit, say so.
     $maxFiles = (int)ini_get('max_file_uploads');
@@ -214,6 +264,7 @@ case 'code_event_delete':
     q('DELETE FROM code_events WHERE id=?', [$id]); redirect(url('codes'));
 
 case 'code_save':
+    if (!is_admin()) { flash('Only the site admin can change the shared code library. Log the code against your vehicle instead.', 'err'); redirect(url('codes')); }
     $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', post('code')));
     $data = ['code' => $code, 'title' => post('title'), 'system' => post('system'), 'severity' => max(1, min(5, (int)post('severity', '2'))), 'description' => post('description'), 'causes' => post('causes'), 'c300_note' => post('c300_note')];
     if ($id) update('obd_codes', $data, $id); else q('INSERT OR REPLACE INTO obd_codes (code,title,system,severity,description,causes,c300_note) VALUES (?,?,?,?,?,?,?)', array_values($data));
@@ -267,7 +318,9 @@ case 'inspection_save':
     $iid = insert('inspections', ['done_on' => post('done_on') ?: today(), 'miles' => post_int('miles') ?? current_miles(), 'kind' => post('kind') ?: 'weekly', 'summary' => post('summary')]);
     $results = $_POST['result'] ?? []; $notes = $_POST['note'] ?? [];
     $fails = 0;
+    $ownChecks = array_flip(own_ids('checks', array_keys((array)$results)));
     foreach ($results as $cid => $r) {
+        if (!isset($ownChecks[(int)$cid])) continue;
         $r = in_array($r, ['ok','warn','fail','skip'], true) ? $r : 'skip';
         if ($r === 'fail') $fails++;
         insert('inspection_results', ['inspection_id' => $iid, 'check_id' => (int)$cid, 'result' => $r, 'note' => trim((string)($notes[$cid] ?? ''))]);
@@ -283,14 +336,16 @@ case 'inspection_delete':
     flash('Inspection deleted.'); redirect(url('inspections'));
 
 case 'visit_save':
-    $data = ['mechanic_id' => post_int('mechanic_id'), 'scheduled_on' => post('scheduled_on') ?: null, 'status' => post('status') ?: 'planned', 'title' => post('title'), 'planned_work' => post('planned_work'), 'miles' => post_int('miles')];
+    $mid = post_int('mechanic_id'); if ($mid && !owns('mechanics', $mid)) $mid = null;
+    $data = ['mechanic_id' => $mid, 'scheduled_on' => post('scheduled_on') ?: null, 'status' => post('status') ?: 'planned', 'title' => post('title'), 'planned_work' => post('planned_work'), 'miles' => post_int('miles')];
     if ($data['title'] === '') { flash('Give the visit a title.', 'err'); redirect(url('visit_form', $id ? ['id' => $id] : [])); }
     if ($id) update('visits', $data, $id); else { $data['created_at'] = now(); $id = insert('visits', $data); }
     // The form only lists active issues, so only those links are replaced: resolved/dismissed issues already
     // attached (e.g. fixed at this visit) stay attached.
     $offered = isset($_POST['offered_ids']) ? array_map('intval', (array)$_POST['offered_ids'])
         : array_map('intval', array_column(rows("SELECT id FROM issues WHERE " . vw() . " AND status IN ('open','monitoring','scheduled')"), 'id')); // form from before this change
-    $checked = array_values(array_unique(array_map('intval', (array)($_POST['issue_ids'] ?? []))));
+    $checked = own_ids('issues', (array)($_POST['issue_ids'] ?? []));
+    $offered = own_ids('issues', $offered);
     foreach ($offered as $iid) if (!in_array($iid, $checked, true)) q('DELETE FROM visit_issues WHERE visit_id=? AND issue_id=?', [$id, $iid]);
     foreach ($checked as $iid) if ($iid > 0 && !col('SELECT 1 FROM visit_issues WHERE visit_id=? AND issue_id=?', [$id, $iid])) q('INSERT INTO visit_issues (visit_id, issue_id) VALUES (?,?)', [$id, $iid]);
     if (($_POST['mark_scheduled'] ?? '') === '1') q("UPDATE issues SET status='scheduled', updated_at=? WHERE id IN (SELECT issue_id FROM visit_issues WHERE visit_id=?) AND status IN ('open','monitoring')", [now(), $id]);
@@ -304,7 +359,7 @@ case 'visit_complete':
     if ($data['miles'] && $data['miles'] > current_miles()) { update('vehicle', ['mileage' => $data['miles'], 'mileage_updated' => post('completed_on') ?: today()], (int)vehicle()['id']); insert('mileage_log', ['logged_at' => post('completed_on') ?: today(), 'miles' => $data['miles'], 'note' => 'From visit #' . $id]); }
     // maintenance items ticked as done during the visit
     $doneOn = post('completed_on') ?: today();
-    foreach ((array)($_POST['maint_done'] ?? []) as $mid) update('maintenance', ['last_miles' => $data['miles'] ?? ($doneOn < today() ? null : current_miles()), 'last_date' => $doneOn, 'due_date' => null], (int)$mid);
+    foreach (own_ids('maintenance', (array)($_POST['maint_done'] ?? [])) as $mid) update('maintenance', ['last_miles' => $data['miles'] ?? ($doneOn < today() ? null : current_miles()), 'last_date' => $doneOn, 'due_date' => null], (int)$mid);
     flash('Visit record updated.'); redirect(url('visit', ['id' => $id]));
 
 case 'visit_signoff':
@@ -312,7 +367,7 @@ case 'visit_signoff':
     if ($v['signed_off']) { update('visits', ['signed_off' => 0, 'signed_at' => null], $id); flash('Sign-off removed.'); }
     else {
         update('visits', ['signed_off' => 1, 'signed_at' => now(), 'status' => 'done'], $id);
-        foreach ((array)($_POST['resolve_issue'] ?? []) as $iid) { update('issues', ['status' => 'resolved', 'resolved_on' => today(), 'updated_at' => now()], (int)$iid); insert('issue_notes', ['issue_id' => (int)$iid, 'noted_at' => today(), 'miles' => $v['miles'] ?? current_miles(), 'body' => 'Resolved at visit #' . $id . ' (' . $v['title'] . ').']); }
+        foreach (own_ids('issues', (array)($_POST['resolve_issue'] ?? [])) as $iid) { update('issues', ['status' => 'resolved', 'resolved_on' => today(), 'updated_at' => now()], (int)$iid); insert('issue_notes', ['issue_id' => (int)$iid, 'noted_at' => today(), 'miles' => $v['miles'] ?? current_miles(), 'body' => 'Resolved at visit #' . $id . ' (' . $v['title'] . ').']); }
         flash('Signed off.');
     }
     redirect(url('visit', ['id' => $id]));
@@ -328,6 +383,7 @@ case 'visit_delete':
 
 case 'part_save':
     $data = ['name' => post('name'), 'supplier' => post('supplier'), 'url' => post('url'), 'part_no' => post('part_no'), 'price' => post_float('price'), 'status' => post('status') ?: 'wanted', 'category' => post('category'), 'notes' => post('notes'), 'issue_id' => post_int('issue_id')];
+    if ($data['issue_id'] && !owns('issues', $data['issue_id'])) $data['issue_id'] = null;
     if ($data['name'] === '') { flash('Part name required.', 'err'); redirect(url('parts')); }
     if ($id) update('parts', $data, $id); else { $data['created_at'] = now(); insert('parts', $data); }
     flash('Part saved.'); redirect(url('parts'));
@@ -340,6 +396,7 @@ case 'part_delete':
 
 case 'link_save':
     if (post('title') === '' || post('url') === '') { flash('Title and URL required.', 'err'); redirect(url('links')); }
+    if (!preg_match('~^https?://~i', post('url'))) { flash('Links must start with http:// or https://', 'err'); redirect(url('links')); }
     $data = ['title' => post('title'), 'url' => post('url'), 'category' => post('category') ?: 'Reference', 'notes' => post('notes')];
     if ($id) update('links', $data, $id); else insert('links', $data);
     flash('Link saved.'); redirect(url('links'));

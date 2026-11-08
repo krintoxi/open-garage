@@ -237,3 +237,172 @@ function seed_vehicle_templates(int $vehicleId, string $kind): void {
     foreach ($t['maintenance'] as [$item, $cat, $mi, $mo, $notes, $prio]) insert('maintenance', ['vehicle_id' => $vehicleId, 'item' => $item, 'category' => $cat, 'interval_miles' => $mi, 'interval_months' => $mo, 'notes' => $notes, 'priority' => $prio]);
     foreach ($t['checks'] as [$cat, $item, $how, $sort]) insert('checks', ['vehicle_id' => $vehicleId, 'category' => $cat, 'item' => $item, 'how_to' => $how, 'frequency' => 'weekly', 'sort' => $sort, 'active' => 1]);
 }
+
+/** Delete a vehicle with every record and photo file that belongs to it. */
+function delete_vehicle(int $vidDel): void {
+    $v = row('SELECT * FROM vehicle WHERE id=?', [$vidDel]);
+    if (!$v) return;
+    $paths = array_merge(array_column(rows('SELECT path FROM photos WHERE vehicle_id=?', [$vidDel]), 'path'), array_filter([$v['hero_cutout'] ?? null, $v['hero_depth'] ?? null, $v['mesh_glb'] ?? null]));
+    q('DELETE FROM issue_notes WHERE issue_id IN (SELECT id FROM issues WHERE vehicle_id=?)', [$vidDel]);
+    q('DELETE FROM visit_issues WHERE visit_id IN (SELECT id FROM visits WHERE vehicle_id=?) OR issue_id IN (SELECT id FROM issues WHERE vehicle_id=?)', [$vidDel, $vidDel]);
+    q('DELETE FROM inspection_results WHERE inspection_id IN (SELECT id FROM inspections WHERE vehicle_id=?)', [$vidDel]);
+    foreach (SCOPED as $t) q("DELETE FROM $t WHERE vehicle_id=?", [$vidDel]);
+    q('DELETE FROM vehicle WHERE id=?', [$vidDel]);
+    foreach (array_unique($paths) as $pth) {
+        if ((int)col('SELECT COUNT(*) FROM photos WHERE path=?', [$pth]) || (int)col('SELECT COUNT(*) FROM vehicle WHERE ? IN (photo, hero_cutout, hero_depth, mesh_glb)', [$pth])) continue;
+        $f = UPLOAD_DIR . '/' . basename((string)$pth); if (is_file($f)) @unlink($f);
+    }
+}
+
+/** "What's going on with it?" answers in the Add-vehicle wizard, turned into issues with plain-language guidance. */
+function quick_issue_templates(string $kind): array {
+    $two = in_array($kind, ['scooter', 'motorcycle'], true);
+    $t = [
+        'oil' => ['Oil change due', 'Fluids', 'engine', 3, $two
+            ? "- Use 4-stroke motorcycle oil (JASO MA), not car oil: car oil can make the clutch slip.\n- Small scooters hold under a litre, so old oil wears them fast. Change it now if you don't know when it was last done.\n- Mark it done under Maintenance with the mileage so the next one counts down."
+            : "- Check the oil type and amount in the owner's manual (or the sticker under the hood).\n- If you don't know when it was last done, change it now and start the record here.\n- Mark it done under Maintenance with the mileage so the next one counts down.", 'Engine oil and filter service.'],
+        'tire' => ['Tire worn or damaged', 'Wheels / Tires', 'wheels', 4,
+            "- Don't drive or ride on it if the tread is at the wear bars, cords show, or the sidewall is cracked or bulging.\n- Read the size off the sidewall and add a photo of it here: that's what you buy.\n" . ($two ? "- Car tire shops often refuse two-wheelers. Motorcycle or powersports shops will fit it, often cheaply if you bring just the wheel." : "- Replace in pairs on the same axle, and get an alignment if the wear is uneven."), 'Inspect and replace the tire; check pressures and wear pattern.'],
+        'brakes' => ['Brakes squeal or feel soft', 'Brakes', 'brakes', 4,
+            "- A soft or sinking pedal/lever, or grinding metal, means stop driving and get it checked now.\n- A light squeal on the first stops of the day is often normal; a constant squeal usually means pads are near the wear indicator.\n- Ask for pad thickness in millimetres and photos when it's checked.", 'Inspect pads/shoes, rotors/drums and fluid.'],
+        'battery' => ['Hard to start or weak battery', 'Electrical', 'electrical', 2,
+            "- Note whether it clicks, cranks slowly, or nothing happens.\n- Most auto parts stores test batteries for free.\n- A battery over 4-5 years old is due anyway.", 'Test battery and charging system.'],
+        'leak' => ['Something is leaking', 'Fluids', 'engine', 3,
+            "- Put white cardboard under it overnight and photograph the spot.\n- Colour tells you what: red/pink is transmission or power steering fluid, green/orange/pink and sweet-smelling is coolant, brown/black is engine oil, clear is usually just A/C water.\n- Add the photo here and note where under the vehicle it drips.", 'Find the source of the leak.'],
+        'noise' => ['New noise', 'Other', 'other', 2,
+            "- Write down when it happens: cold or warm, turning, braking, over bumps, at what speed.\n- Record a short video with sound and add it to your phone's notes; mechanics find it much faster that way.", 'Diagnose the noise described.'],
+        'lights' => ['A light is out', 'Electrical', 'electrical', 2, "- Check every light: low/high beam, tail, brake, signals" . ($two ? '' : ', plate') . ".\n- A bulb is usually a cheap fix; a fast-blinking signal means a bulb on that side is out.", 'Replace the bulb or find the fault.'],
+    ];
+    if (!$two) {
+        $t['cel'] = ['Check engine light is on', 'Engine', 'engine', 3, "- Steady light: get the code read soon (many auto parts stores do it free) and log it under OBD codes.\n- Flashing light: misfire, which can damage the catalytic converter. Drive gently and get it checked right away.\n- A loose gas cap is a common cause; tighten it and see if the light clears after a few drives.", 'Read codes and diagnose.'];
+        $t['ac'] = ['A/C is not cold', 'A/C & HVAC', 'ac', 2, "- Check whether the cooling fan behind the grille runs with the A/C on.\n- Avoid DIY recharge cans: overfilling causes more damage. Ask for a leak test.", 'A/C performance check and leak test.'];
+    }
+    return $t;
+}
+/** Create issues from the wizard's ticked answers. Returns how many were added. */
+function add_quick_issues(int $vehicleId, string $kind, array $keys, int $miles): int {
+    $t = quick_issue_templates($kind); $n = 0;
+    foreach (array_unique($keys) as $k) {
+        if (!isset($t[$k])) continue;
+        [$title, $sys, $loc, $sev, $owner, $mech] = $t[$k];
+        $iid = insert('issues', ['vehicle_id' => $vehicleId, 'title' => $title, 'system' => $sys, 'location' => $loc, 'severity' => $sev, 'status' => 'open', 'summary' => '',
+            'evidence' => '', 'likely_causes' => '', 'owner_guidance' => $owner, 'mechanic_guidance' => $mech, 'opened_on' => today(), 'resolved_on' => null,
+            'caused_by_visit_id' => null, 'est_cost' => '', 'links' => '', 'created_at' => now(), 'updated_at' => now()]);
+        if ($k === 'oil') q("UPDATE maintenance SET due_date=? WHERE vehicle_id=? AND item LIKE '%oil%' AND category='Engine'", [today(), $vehicleId]);
+        $n++;
+    }
+    return $n;
+}
+
+/** Makes (curated, popular first) and models (NHTSA vPIC, cached 30 days) for the wizard's pickers. */
+function vpic_list(string $what, string $kind, string $make, int $year): array {
+    $two = in_array($kind, ['scooter', 'motorcycle'], true);
+    if ($what === 'makes') return ['makes' => $two
+        ? ['Honda', 'Yamaha', 'Suzuki', 'Kawasaki', 'Harley-Davidson', 'BMW', 'Ducati', 'KTM', 'Triumph', 'Royal Enfield', 'Indian', 'Vespa', 'Piaggio', 'Kymco', 'SYM', 'Genuine', 'Italika', 'Tao Motor', 'Znen', 'Lance', 'Wolf', 'Can-Am', 'Aprilia', 'CFMoto', 'Benelli', 'Zero']
+        : ['Toyota', 'Honda', 'Ford', 'Chevrolet', 'Nissan', 'Hyundai', 'Kia', 'Jeep', 'Ram', 'GMC', 'Subaru', 'Mazda', 'Volkswagen', 'BMW', 'Mercedes-Benz', 'Audi', 'Lexus', 'Tesla', 'Dodge', 'Chrysler', 'Buick', 'Cadillac', 'Acura', 'Infiniti', 'Volvo', 'Mitsubishi', 'Lincoln', 'Land Rover', 'Porsche', 'Mini', 'Genesis', 'Jaguar', 'Alfa Romeo', 'Fiat', 'Maserati', 'Rivian', 'Polestar', 'Pontiac', 'Saturn', 'Scion', 'Mercury', 'Hummer', 'Suzuki', 'Isuzu']];
+    if ($what !== 'models' || $make === '' || $year < 1981 || $year > (int)date('Y') + 2) return ['models' => []];
+    $types = $two ? ['motorcycle'] : ($kind === 'suv' ? ['truck', 'mpv'] : ['car', 'mpv', 'truck']);
+    $key = 'models:' . strtolower($make) . ':' . $year . ':' . implode(',', $types);
+    $c = row('SELECT * FROM vpic_cache WHERE key=?', [$key]);
+    if ($c && (int)$c['fetched_at'] > time() - 30 * 86400) return json_decode($c['body'], true) ?: ['models' => []];
+    $models = [];
+    foreach ($types as $t) {
+        $j = http_get_json('https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/' . rawurlencode($make) . '/modelyear/' . $year . '/vehicletype/' . $t . '?format=json');
+        foreach ($j['Results'] ?? [] as $r) if (!empty($r['Model_Name'])) $models[trim($r['Model_Name'])] = true;
+    }
+    $out = ['models' => array_keys($models)];
+    natcasesort($out['models']); $out['models'] = array_values($out['models']);
+    if ($out['models']) q('INSERT OR REPLACE INTO vpic_cache (key, body, fetched_at) VALUES (?,?,?)', [$key, json_encode($out), time()]);
+    return $out;
+}
+
+/* ---- garage-vision: cut-out + depth showroom image, and experimental single-photo 3D (runs on a GPU machine) ---- */
+function vision_call(string $method, string $path, ?string $body = null, int $timeout = 40): ?array {
+    if (VISION_URL === '' || !function_exists('curl_init')) return null;
+    $c = curl_init(rtrim(VISION_URL, '/') . $path);
+    $h = ['Authorization: Bearer ' . VISION_TOKEN];
+    if ($body !== null) $h[] = 'Content-Type: application/octet-stream';
+    curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_HTTPHEADER => $h, CURLOPT_CUSTOMREQUEST => $method]);
+    if ($body !== null) curl_setopt($c, CURLOPT_POSTFIELDS, $body);
+    $out = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE); $type = (string)curl_getinfo($c, CURLINFO_CONTENT_TYPE);
+    if ($out === false) return null;
+    return ['code' => $code, 'type' => $type, 'body' => (string)$out];
+}
+function store_bytes(string $bytes, string $ext, string $tag): string {
+    if (!is_dir(UPLOAD_DIR)) mkdir(UPLOAD_DIR, 0775, true);
+    protect_dir(UPLOAD_DIR);
+    $name = date('Ymd-His') . '-' . $tag . '-' . bin2hex(random_bytes(4)) . '.' . $ext;
+    file_put_contents(UPLOAD_DIR . '/' . $name, $bytes);
+    return UPLOAD_URL . '/' . $name;
+}
+function drop_file(?string $path): void {
+    if (!$path) return;
+    if ((int)col('SELECT COUNT(*) FROM photos WHERE path=?', [$path])) return;
+    $f = UPLOAD_DIR . '/' . basename($path); if (is_file($f)) @unlink($f);
+}
+/** Make the cut-out + depth images for a vehicle's own photo. Returns ready | pending | limit | off. */
+function vision_process(int $vehicleId, bool $force = false): string {
+    $v = row('SELECT * FROM vehicle WHERE id=?', [$vehicleId]);
+    if (!$v || !$v['photo'] || $v['photo_credit']) return 'off';
+    if (VISION_URL === '') return 'off';
+    if (MULTI_USER && !rate_ok('vision:' . $v['user_id'] . ':' . date('Ymd'), LIMIT_VISION_PER_DAY, 86400)) return 'limit';
+    $src = UPLOAD_DIR . '/' . basename((string)$v['photo']);
+    $r = is_file($src) ? vision_call('POST', '/showroom', (string)file_get_contents($src), 45) : null;
+    $j = ($r && $r['code'] === 200) ? json_decode($r['body'], true) : null;
+    if (!$j || empty($j['cutout']) || empty($j['depth'])) { update('vehicle', ['vision_status' => 'pending:' . time()], $vehicleId); return 'pending'; }
+    $cut = store_bytes(base64_decode($j['cutout']), 'png', 'cutout'); $dep = store_bytes(base64_decode($j['depth']), 'png', 'depth');
+    drop_file($v['hero_cutout']); drop_file($v['hero_depth']);
+    update('vehicle', ['hero_cutout' => $cut, 'hero_depth' => $dep, 'vision_status' => 'ready'], $vehicleId);
+    return 'ready';
+}
+/** Start building a 3D model from the cut-out. Returns running | limit | offline | nophoto. */
+function mesh_start(int $vehicleId): string {
+    if (!VISION_MESH) return 'offline';
+    $v = row('SELECT * FROM vehicle WHERE id=?', [$vehicleId]);
+    if (!$v || !$v['photo'] || $v['photo_credit']) return 'nophoto';
+    if (MULTI_USER && !rate_ok('vision:' . $v['user_id'] . ':' . date('Ymd'), LIMIT_VISION_PER_DAY, 86400)) return 'limit';
+    $src = UPLOAD_DIR . '/' . basename((string)($v['hero_cutout'] ?: $v['photo']));
+    $r = is_file($src) ? vision_call('POST', '/mesh/start', (string)file_get_contents($src), 20) : null;
+    $j = ($r && $r['code'] === 200) ? json_decode($r['body'], true) : null;
+    if (!$j || empty($j['job'])) return 'offline';
+    update('vehicle', ['mesh_job' => (string)$j['job'], 'mesh_status' => 'running'], $vehicleId);
+    return 'running';
+}
+/** Status for the dashboard poller; also retries a pending cut-out and collects a finished 3D model. */
+function vision_status_for(int $vehicleId): array {
+    $v = row('SELECT * FROM vehicle WHERE id=?', [$vehicleId]);
+    if (!$v) return ['vision' => 'none'];
+    $vs = (string)$v['vision_status'];
+    if (str_starts_with($vs, 'pending:') && (int)substr($vs, 8) < time() - 60) $vs = vision_process($vehicleId);
+    $mesh = (string)$v['mesh_status']; $progress = null;
+    if ($mesh === 'running' && $v['mesh_job']) {
+        $r = vision_call('GET', '/mesh/status?job=' . rawurlencode($v['mesh_job']), null, 8);
+        $j = ($r && $r['code'] === 200) ? json_decode($r['body'], true) : null;
+        $st = $j['status'] ?? 'unknown'; $progress = $j['progress'] ?? null;
+        if ($st === 'done') {
+            $g = vision_call('GET', '/mesh/result?job=' . rawurlencode($v['mesh_job']), null, 30);
+            if ($g && $g['code'] === 200 && strlen($g['body']) > 1000) {
+                $path = store_bytes($g['body'], 'glb', 'mesh'); drop_file($v['mesh_glb']);
+                update('vehicle', ['mesh_glb' => $path, 'mesh_status' => 'ready', 'mesh_job' => null], $vehicleId); $mesh = 'ready'; $v['mesh_glb'] = $path;
+            }
+        } elseif (in_array($st, ['error', 'missing'], true)) { update('vehicle', ['mesh_status' => 'error', 'mesh_job' => null], $vehicleId); $mesh = 'error'; }
+    }
+    return ['vision' => str_starts_with($vs, 'pending') ? 'pending' : ($vs ?: 'none'), 'cutout' => $v['hero_cutout'] ? photo_url($v['hero_cutout']) : null,
+        'depth' => $v['hero_depth'] ? photo_url($v['hero_depth']) : null, 'mesh' => $mesh ?: 'none', 'progress' => $progress, 'glb' => $v['mesh_glb'] ? photo_url($v['mesh_glb']) : null];
+}
+
+/** Everything one account owns, for the JSON backup in multi-user mode. */
+function account_export(int $userId): array {
+    $out = ['exported_at' => now(), 'vehicles' => []];
+    foreach (rows('SELECT * FROM vehicle WHERE user_id=?', [$userId]) as $v) {
+        $vid = (int)$v['id']; $e = ['vehicle' => $v];
+        foreach (SCOPED as $t) if (!in_array($t, ['manual_pages'], true)) $e[$t] = rows("SELECT * FROM $t WHERE vehicle_id=?", [$vid]);
+        $e['issue_notes'] = rows('SELECT n.* FROM issue_notes n JOIN issues i ON i.id=n.issue_id WHERE i.vehicle_id=?', [$vid]);
+        $e['visit_issues'] = rows('SELECT vi.* FROM visit_issues vi JOIN visits v ON v.id=vi.visit_id WHERE v.vehicle_id=?', [$vid]);
+        $e['inspection_results'] = rows('SELECT r.* FROM inspection_results r JOIN inspections i ON i.id=r.inspection_id WHERE i.vehicle_id=?', [$vid]);
+        $out['vehicles'][] = $e;
+    }
+    $out['mechanics'] = rows('SELECT * FROM mechanics WHERE user_id=?', [$userId]);
+    $out['links'] = rows('SELECT * FROM links WHERE user_id=?', [$userId]);
+    return $out;
+}
