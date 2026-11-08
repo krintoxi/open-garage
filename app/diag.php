@@ -16,7 +16,8 @@ function is_guest(): bool { return MULTI_USER && (bool)(current_user()['is_guest
 /** Delete one account and everything in it (also used for expired guests). */
 function account_wipe(int $userId): void {
     foreach (rows('SELECT id FROM vehicle WHERE user_id=?', [$userId]) as $dv) delete_vehicle((int)$dv['id']);
-    foreach (['mechanics', 'links', 'customers', 'diag_reports', 'tool_links'] as $t) q("DELETE FROM $t WHERE user_id=?", [$userId]);
+    foreach (['job_lines', 'job_payments', 'job_auth', 'job_inspect'] as $t) q("DELETE FROM $t WHERE job_id IN (SELECT id FROM jobs WHERE user_id=?)", [$userId]);
+    foreach (['mechanics', 'links', 'customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'shop_profile'] as $t) q("DELETE FROM $t WHERE user_id=?", [$userId]);
     q('DELETE FROM users WHERE id=?', [$userId]);
 }
 function guests_purge(): void {
@@ -333,7 +334,8 @@ function diag_analyze(array $veh, array $codes, string $freezeText = '', array $
 /* ---------- Ownership for the account-level tables ---------- */
 
 function owns_row(string $table, int $id): bool {
-    return in_array($table, ['customers', 'diag_reports', 'tool_links'], true) && $id > 0 && (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]);
+    if (in_array($table, ['job_lines', 'job_payments', 'job_auth', 'job_inspect'], true)) return $id > 0 && (bool)col("SELECT 1 FROM $table x JOIN jobs j ON j.id=x.job_id WHERE x.id=? AND j.user_id=?", [$id, uid()]);
+    return in_array($table, ['customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog'], true) && $id > 0 && (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]);
 }
 
 /** Scanner and repair-information services owners and shops already pay for, grouped by brand, to open from the app. */

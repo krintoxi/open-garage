@@ -39,6 +39,17 @@ it tells you what to do this week, keeps the history a shop can't argue with, an
   and printable reports. **My tools** keeps the paid services you already use (ALLDATA, ProDemand, Identifix, scan
   tool clouds, factory service sites) one tap away, each opening in its own window; results come back by upload,
   paste, or the phone's Share sheet (the installed app is a share target).
+- **Shop management (Mechanic mode).** Repair orders from estimate to paid: services built from labor (hours ×
+  rate), parts (cost → sell price through a tiered markup matrix), fees, sublet and core charges; shop supplies with a
+  cap, separate parts/labor/fee tax, discounts, gross profit and effective labor rate. ~55 canned jobs with typical
+  labor times (and your own), a parts catalog with stock levels and CSV import, and a parts finder that searches your
+  catalog and opens supplier searches for the exact vehicle (RockAuto, AutoZone, O'Reilly, NAPA, FCP Euro, eBay,
+  Autodoc...). Customers approve or decline each service from a link and sign with their name; every authorization is
+  recorded (who, when, how, how much) and the order warns before exceeding it (e.g. California's 10% / $100 rule).
+  Multi-point vehicle inspection (green/yellow/red) feeding the estimate, part status (quoted/ordered/received),
+  concern/cause/correction, printable estimate, technician work order and invoice, payments (recorded, not processed),
+  a shop board with sales, average repair order, effective labor rate, closing ratio and money owed, and one-tap
+  "estimate from diagnosis".
 - **Repair videos in the app** (YouTube Data API key in `YOUTUBE_KEY`; without it the Videos tab opens YouTube).
 - **Try it without an account** (hosted mode): guest garages that expire after `GUEST_DAYS` unless kept, and a
   public code lookup page (`?p=lookup`), both rate-limited.

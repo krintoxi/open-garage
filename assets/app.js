@@ -327,3 +327,47 @@ document.querySelectorAll('table').forEach(t => {
     if (win) { try { win.opener = null; } catch {} } else location.href = b.dataset.toolUrl;
   }));
 })();
+
+// Shop: parts finder, rename prompts, blank-service helper, customer → vehicle filter.
+(() => {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const dlg = document.getElementById('parts-dlg');
+  if (dlg) {
+    const links = JSON.parse(document.getElementById('parts-links-json').textContent);
+    const qIn = dlg.querySelector('[data-parts-q]'), cat = dlg.querySelector('[data-parts-catalog]'), lk = dlg.querySelector('[data-parts-links]');
+    const run = async q => {
+      const enc = encodeURIComponent(q);
+      lk.innerHTML = Object.entries(links).map(([g, items]) => '<div class="pl-grp"><small>' + esc(g) + '</small><div>' + items.map(([n, u]) => '<a class="btn sm" target="_blank" rel="noopener" href="' + esc(u.replace(/__Q__/gi, enc)) + '">' + esc(n) + ' ↗</a>').join('') + '</div></div>').join('');
+      cat.innerHTML = q ? '<p class="muted">Searching your catalog…</p>' : '';
+      if (!q) return;
+      try {
+        const r = await fetch('index.php?p=parts_q&q=' + enc, { credentials: 'same-origin' }).then(r => r.json());
+        cat.innerHTML = r.items.length ? '<small class="muted">In your catalog</small>' + r.items.map(p => '<button type="button" class="pc-item" data-pick=\'' + esc(JSON.stringify(p)) + '\'><b>' + esc(p.name) + '</b><span>' + esc([p.brand, p.part_no].filter(Boolean).join(' ')) + '</span><span>' + esc(p.sell_fmt) + ' · cost ' + esc(p.cost_fmt) + ' · stock ' + esc(p.qty) + '</span></button>').join('') : '<p class="muted" style="font-size:13px">Not in your catalog. Check a supplier below, then fill in the form.</p>';
+      } catch { cat.innerHTML = ''; }
+    };
+    document.querySelectorAll('[data-parts-open]').forEach(b => b.addEventListener('click', () => {
+      dlg.querySelector('[data-parts-grp]').value = b.dataset.grp || 'General';
+      dlg.querySelector('[data-parts-cat]').value = '';
+      qIn.value = b.dataset.q || ''; dlg.querySelector('[data-parts-desc]').value = b.dataset.q || '';
+      dlg.showModal(); run(qIn.value.trim()); qIn.focus();
+    }));
+    dlg.querySelector('[data-parts-form]').addEventListener('submit', e => { e.preventDefault(); run(qIn.value.trim()); });
+    cat.addEventListener('click', e => {
+      const b = e.target.closest('[data-pick]'); if (!b) return;
+      const p = JSON.parse(b.dataset.pick), f = dlg.querySelector('.parts-manual');
+      f.elements.catalog_id.value = p.id; f.elements.description.value = p.name; f.elements.part_no.value = p.part_no || ''; f.elements.brand.value = p.brand || '';
+      f.elements.supplier.value = p.supplier || 'Stock'; f.elements.cost.value = p.cost; f.elements.price.value = p.sell;
+      f.elements.description.focus();
+    });
+  }
+  document.querySelectorAll('[data-prompt]').forEach(b => b.addEventListener('click', e => {
+    const v = prompt(b.dataset.prompt); if (!v) { e.preventDefault(); return; }
+    b.form.querySelector('[name="' + b.dataset.promptField + '"]').value = v;
+  }));
+  document.querySelectorAll('[data-copy-to]').forEach(i => i.form.addEventListener('submit', () => { i.form.elements[i.dataset.copyTo].value = i.value; }));
+  document.querySelectorAll('[data-kind-pick]').forEach(s => s.addEventListener('change', () => {
+    const l = s.form.querySelector('[data-auto-lbl]'); if (l) l.textContent = s.value === 'labor' ? 'shop labor rate' : (s.value === 'part' ? 'matrix' : 'cost');
+  }));
+  const cp = document.querySelector('[data-cust-pick]');
+  if (cp) { const vs = cp.form.elements.vehicle_id; const sync = () => { [...vs.options].forEach(o => { if (o.value) o.hidden = cp.value !== '' && o.dataset.cust !== cp.value; }); }; cp.addEventListener('change', sync); sync(); }
+})();

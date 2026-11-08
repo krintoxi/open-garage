@@ -404,7 +404,8 @@ function account_export(int $userId): array {
         $out['vehicles'][] = $e;
     }
     $out['mechanics'] = rows('SELECT * FROM mechanics WHERE user_id=?', [$userId]);
-    foreach (['customers', 'diag_reports', 'tool_links'] as $t) $out[$t] = rows("SELECT * FROM $t WHERE user_id=?", [$userId]);
+    foreach (['customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'shop_profile'] as $t) $out[$t] = rows("SELECT * FROM $t WHERE user_id=?", [$userId]);
+    foreach (['job_lines', 'job_payments', 'job_auth', 'job_inspect'] as $t) $out[$t] = rows("SELECT x.* FROM $t x JOIN jobs j ON j.id=x.job_id WHERE j.user_id=?", [$userId]);
     $out['links'] = rows('SELECT * FROM links WHERE user_id=?', [$userId]);
     return $out;
 }

@@ -31,6 +31,7 @@ $canPhoto = VISION_URL !== '';
         <?php if ($pro && $customers): ?><select name="customer_id" class="mini"><option value="">My own vehicle</option><?php foreach ($customers as $cu): ?><option value="<?= (int)$cu['id'] ?>" <?= (int)$report['customer_id'] === (int)$cu['id'] ? 'selected' : '' ?>>Customer: <?= h($cu['name']) ?></option><?php endforeach; ?></select><?php endif; ?>
         <input type="number" name="miles" placeholder="Odometer" class="mini" style="width:110px"><button class="sm" type="submit">Add this vehicle to <?= $pro ? 'the garage' : 'my garage' ?></button></form>
     <?php endif; ?>
+    <?php if ($pro): ?><form method="post"><input type="hidden" name="action" value="job_new"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="diag_report_id" value="<?= (int)$report['id'] ?>"><button class="sm primary">Create estimate from this</button></form><?php endif; ?>
     <button type="button" class="sm" onclick="print()">Print / PDF report</button>
     <a class="btn sm ghost" href="<?= url('diagnose') ?>">New diagnosis</a>
     <form method="post" style="margin-left:auto"><input type="hidden" name="action" value="diag_delete"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="id" value="<?= (int)$report['id'] ?>"><button class="sm ghost danger" data-confirm="Delete this report?">Delete</button></form>

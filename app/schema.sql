@@ -45,3 +45,18 @@ CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY, user_id INTEGER NO
 CREATE TABLE IF NOT EXISTS diag_reports (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 1, vehicle_id INT, customer_id INT, vehicle_json TEXT, codes TEXT, freeze TEXT,
   symptoms TEXT, notes TEXT, source TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS tool_links (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 1, grp TEXT, name TEXT, url TEXT, notes TEXT, sort INT DEFAULT 0);
+CREATE TABLE IF NOT EXISTS shop_profile (user_id INTEGER PRIMARY KEY, data TEXT);
+CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 1, customer_id INT, vehicle_id INT, stage TEXT DEFAULT 'estimate', est_no TEXT, inv_no TEXT,
+  title TEXT, complaint TEXT, cause TEXT, correction TEXT, odometer_in INT, odometer_out INT, promised TEXT, notes_customer TEXT, notes_internal TEXT, discount REAL DEFAULT 0,
+  labor_rate REAL, tax_parts REAL, tax_labor REAL, supplies_pct REAL, supplies_cap REAL, token TEXT UNIQUE, sent_at TEXT, approved_at TEXT, approved_by TEXT, approve_note TEXT,
+  seen_approval INT DEFAULT 1, invoiced_at TEXT, paid_at TEXT, diag_report_id INT, total REAL DEFAULT 0, paid REAL DEFAULT 0, created_at TEXT, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS job_lines (id INTEGER PRIMARY KEY, job_id INT NOT NULL, grp TEXT, kind TEXT, description TEXT, part_no TEXT, brand TEXT, supplier TEXT,
+  qty REAL DEFAULT 1, cost REAL DEFAULT 0, price REAL DEFAULT 0, taxable INT DEFAULT 1, status TEXT DEFAULT 'pending', pstatus TEXT DEFAULT 'quoted', catalog_id INT, sort INT DEFAULT 0);
+CREATE TABLE IF NOT EXISTS job_payments (id INTEGER PRIMARY KEY, job_id INT NOT NULL, amount REAL, method TEXT, paid_on TEXT, note TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS canned_jobs (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 1, name TEXT, category TEXT, lines TEXT, sort INT DEFAULT 0);
+CREATE TABLE IF NOT EXISTS parts_catalog (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 1, part_no TEXT, name TEXT, brand TEXT, supplier TEXT, cost REAL DEFAULT 0,
+  price REAL, qty REAL DEFAULT 0, location TEXT, notes TEXT, updated_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs (user_id, stage);
+CREATE INDEX IF NOT EXISTS idx_job_lines_job ON job_lines (job_id);
+CREATE TABLE IF NOT EXISTS job_auth (id INTEGER PRIMARY KEY, job_id INT NOT NULL, amount REAL, method TEXT, by_name TEXT, note TEXT, at TEXT);
+CREATE TABLE IF NOT EXISTS job_inspect (id INTEGER PRIMARY KEY, job_id INT NOT NULL, section TEXT, item TEXT, rating TEXT, note TEXT, sort INT DEFAULT 0);

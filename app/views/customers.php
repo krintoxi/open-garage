@@ -25,7 +25,7 @@ $list = rows("SELECT c.*, (SELECT COUNT(*) FROM vehicle v WHERE v.customer_id=c.
         <?php if ($cu['notes']): ?><p><?= nl2br(h($cu['notes'])) ?></p><?php endif; ?>
         <h3>Vehicles</h3>
         <?php if (!$cveh): ?><div class="empty">No vehicles yet. Add one below (a VIN fills in the rest).</div><?php endif; ?>
-        <ul class="list"><?php foreach ($cveh as $v): $hl = vehicle_health((int)$v['id']); ?><li><?= health_ring($hl, 40) ?><div class="grow"><a class="t" href="<?= url('dashboard', ['v' => $v['id']]) ?>"><?= h(vehicle_name($v)) ?></a><small><?= $v['plate'] ? h($v['plate']) . ' · ' : '' ?><?= $v['vin'] ? 'VIN ' . h($v['vin']) . ' · ' : '' ?><?= number_format((int)$v['mileage']) ?> mi</small></div><a class="btn sm" href="<?= url('diagnose', ['vehicle' => $v['id']]) ?>">Diagnose</a></li><?php endforeach; ?></ul>
+        <ul class="list"><?php foreach ($cveh as $v): $hl = vehicle_health((int)$v['id']); ?><li><?= health_ring($hl, 40) ?><div class="grow"><a class="t" href="<?= url('dashboard', ['v' => $v['id']]) ?>"><?= h(vehicle_name($v)) ?></a><small><?= $v['plate'] ? h($v['plate']) . ' · ' : '' ?><?= $v['vin'] ? 'VIN ' . h($v['vin']) . ' · ' : '' ?><?= number_format((int)$v['mileage']) ?> mi</small></div><a class="btn sm" href="<?= url('diagnose', ['vehicle' => $v['id']]) ?>">Diagnose</a><a class="btn sm" href="<?= url('jobs', ['new' => 1, 'customer' => $cu['id'], 'vehicle' => $v['id']]) ?>">Estimate</a></li><?php endforeach; ?></ul>
         <details style="margin-top:12px"><summary><b>+ Add a vehicle for <?= h($cu['name']) ?></b></summary>
           <form method="post"><input type="hidden" name="action" value="customer_vehicle_add"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="customer_id" value="<?= (int)$cu['id'] ?>">
             <label>VIN (fills in year/make/model)</label><input type="text" name="vin" maxlength="20" autocapitalize="characters">
@@ -33,6 +33,10 @@ $list = rows("SELECT c.*, (SELECT COUNT(*) FROM vehicle v WHERE v.customer_id=c.
               <div><label>Plate</label><input type="text" name="plate"></div><div><label>Odometer</label><input type="number" name="miles"></div></div>
             <select name="kind" style="margin-top:8px"><?php foreach (VEHICLE_KINDS as $k => $l): ?><option value="<?= h($k) ?>"><?= h($l) ?></option><?php endforeach; ?></select>
             <div class="row end" style="margin-top:10px"><button class="primary sm">Add vehicle</button></div></form></details>
+        <?php $cjobs = rows('SELECT * FROM jobs WHERE customer_id=? AND user_id=? ORDER BY id DESC LIMIT 50', [$cu['id'], uid()]); $owed = array_sum(array_map(fn($j) => $j['stage'] === 'invoiced' ? $j['total'] - $j['paid'] : 0, $cjobs)); ?>
+        <h3 style="margin-top:16px">Repair orders <?= $owed > 0 ? '<span class="st st-open">' . money($owed) . ' owed</span>' : '' ?></h3>
+        <a class="btn sm primary" href="<?= url('jobs', ['new' => 1, 'customer' => $cu['id']]) ?>">+ New estimate</a>
+        <ul class="list"><?php foreach ($cjobs as $j): ?><li><div class="grow"><a class="t" href="<?= url('job', ['id' => $j['id']]) ?>"><?= h(job_label($j)) ?> · <?= h($j['title']) ?></a><small><?= fmt_date($j['created_at']) ?> · <?= h(JOB_STAGES[$j['stage']]) ?></small></div><b><?= money((float)$j['total']) ?></b></li><?php endforeach; ?></ul>
         <h3 style="margin-top:16px">Diagnoses</h3>
         <?php if (!$cdiag): ?><div class="empty">None yet.</div><?php endif; ?>
         <ul class="list"><?php foreach ($cdiag as $r): ?><li><div class="grow"><a class="t" href="<?= url('diagnose', ['r' => $r['id']]) ?>"><?= h(implode(' ', json_decode((string)$r['codes'], true) ?: []) ?: 'Symptoms only') ?></a><small><?= fmt_date($r['created_at']) ?><?= $r['notes'] ? ' · ' . h(mb_strimwidth((string)$r['notes'], 0, 80, '…')) : '' ?></small></div></li><?php endforeach; ?></ul>

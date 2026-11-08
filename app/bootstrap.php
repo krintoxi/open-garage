@@ -66,6 +66,7 @@ require APP_ROOT . '/app/vehicles.php';
 require APP_ROOT . '/app/consumer.php';
 require APP_ROOT . '/app/obd_kb.php';
 require APP_ROOT . '/app/diag.php';
+require APP_ROOT . '/app/shop.php';
 
 function db(): PDO {
     static $pdo = null;
@@ -167,7 +168,7 @@ function owns(string $table, int $id): bool {
     if ($id <= 0) return false;
     return match (true) {
         $table === 'issue_notes' => (bool)col('SELECT 1 FROM issue_notes n JOIN issues i ON i.id=n.issue_id JOIN vehicle v ON v.id=i.vehicle_id WHERE n.id=? AND v.user_id=?', [$id, uid()]),
-        in_array($table, ['mechanics', 'links', 'customers', 'diag_reports', 'tool_links'], true) => (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]),
+        in_array($table, ['mechanics', 'links', 'customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog'], true) => (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]),
         in_array($table, SCOPED, true) => (bool)col("SELECT 1 FROM $table t JOIN vehicle v ON v.id=t.vehicle_id WHERE t.id=? AND v.user_id=?", [$id, uid()]),
         default => false,
     };

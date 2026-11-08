@@ -17,7 +17,7 @@ const OWNED_BY_ACTION = [
 ];
 if ($id && isset(OWNED_BY_ACTION[$action]) && !owns(OWNED_BY_ACTION[$action], $id)) { http_response_code(404); exit('Not found'); }
 // Everything below works on the current vehicle; a new account has none until it adds one.
-if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set', 'mode_set', 'guest_keep', 'guest_end', 'diag_run', 'diag_delete', 'diag_to_vehicle', 'customer_save', 'customer_delete', 'customer_vehicle_add', 'tool_save', 'tool_preset', 'tool_delete'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
+if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set', 'mode_set', 'guest_keep', 'guest_end', 'diag_run', 'diag_delete', 'diag_to_vehicle', 'customer_save', 'customer_delete', 'customer_vehicle_add', 'tool_save', 'tool_preset', 'tool_delete', 'job_new', 'job_save', 'line_add', 'line_save', 'line_delete', 'group_action', 'canned_add', 'job_auth', 'job_stage', 'job_link', 'payment_add', 'payment_delete', 'job_copy', 'job_delete', 'inspect_start', 'inspect_save', 'shop_save', 'canned_save', 'canned_delete', 'catalog_save', 'catalog_delete', 'catalog_import'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
 
 switch ($action) {
 
@@ -500,6 +500,7 @@ case 'customer_save':
 case 'customer_delete':
     $cid = post_int('id') ?? 0;
     if (!owns_row('customers', $cid)) { http_response_code(404); exit('Not found'); }
+    foreach (rows('SELECT id FROM jobs WHERE customer_id=? AND user_id=?', [$cid, uid()]) as $cj) { foreach (['job_lines', 'job_payments', 'job_auth', 'job_inspect'] as $t) q("DELETE FROM $t WHERE job_id=?", [$cj['id']]); q('DELETE FROM jobs WHERE id=?', [$cj['id']]); }
     foreach (rows('SELECT id FROM vehicle WHERE customer_id=? AND user_id=?', [$cid, uid()]) as $cv) delete_vehicle((int)$cv['id']);
     q('DELETE FROM diag_reports WHERE customer_id=? AND user_id=?', [$cid, uid()]);
     q('DELETE FROM customers WHERE id=?', [$cid]);
@@ -536,6 +537,243 @@ case 'tool_preset':
 case 'tool_delete':
     if (owns_row('tool_links', (int)$id)) q('DELETE FROM tool_links WHERE id=?', [$id]);
     redirect(url('tools'));
+
+case 'job_new':
+    $cid = owns_row('customers', post_int('customer_id') ?? 0) ? post_int('customer_id') : null;
+    $vehId = post_int('vehicle_id') ?? 0; $vehId = $vehId && owns_vehicle($vehId) ? $vehId : null;
+    if ($vehId && !$cid) $cid = col('SELECT customer_id FROM vehicle WHERE id=?', [$vehId]) ?: null;
+    $s = shop();
+    $rep = owns_row('diag_reports', post_int('diag_report_id') ?? 0) ? row('SELECT * FROM diag_reports WHERE id=?', [post_int('diag_report_id')]) : null;
+    if ($rep) { $vehId = $vehId ?: ($rep['vehicle_id'] ? (int)$rep['vehicle_id'] : null); $cid = $cid ?: ($rep['customer_id'] ?: null); }
+    $codes = $rep ? (json_decode((string)$rep['codes'], true) ?: []) : [];
+    $complaint = post('complaint') ?: ($codes ? 'Check engine light on. Codes: ' . implode(', ', array_map(fn($c) => $c . ' (' . obd_lookup($c)['title'] . ')', $codes)) . '.' . ($rep['notes'] ? ' ' . $rep['notes'] : '') : '');
+    $jid = insert('jobs', ['user_id' => uid(), 'customer_id' => $cid, 'vehicle_id' => $vehId, 'stage' => 'estimate', 'est_no' => next_number('est'), 'title' => post('title') ?: ($codes ? 'Check engine light: ' . implode(' ', $codes) : 'Estimate'),
+        'complaint' => $complaint, 'odometer_in' => post_int('odometer_in') ?? ($vehId ? (int)col('SELECT mileage FROM vehicle WHERE id=?', [$vehId]) : null),
+        'labor_rate' => $s['labor_rate'], 'tax_parts' => $s['tax_parts'], 'tax_labor' => $s['tax_labor'], 'supplies_pct' => $s['supplies_pct'], 'supplies_cap' => $s['supplies_cap'],
+        'discount' => 0, 'diag_report_id' => $rep['id'] ?? null, 'created_at' => now(), 'updated_at' => now()]);
+    $job = row('SELECT * FROM jobs WHERE id=?', [$jid]);
+    if ($rep) {
+        $all = []; foreach (canned_jobs() as $cj) $all[$cj['name']] = $cj;
+        if (isset($all['Check engine light diagnosis'])) job_add_canned($job, $all['Check engine light diagnosis'], 'Diagnosis');
+        foreach (diag_job_suggestions($codes, $vehId ? (row('SELECT * FROM vehicle WHERE id=?', [$vehId]) ?? []) : (json_decode((string)$rep['vehicle_json'], true) ?: [])) as $n) if (isset($all[$n])) job_add_canned($job, $all[$n]);
+    }
+    if (($cn = post_int('canned_id')) && owns_row('canned_jobs', $cn)) job_add_canned($job, row('SELECT * FROM canned_jobs WHERE id=?', [$cn]));
+    job_refresh($jid);
+    redirect(url('job', ['id' => $jid]));
+
+case 'job_save':
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $d = [];
+    foreach (['title', 'complaint', 'cause', 'correction', 'promised', 'notes_customer', 'notes_internal'] as $k) $d[$k] = post($k);
+    foreach (['odometer_in', 'odometer_out'] as $k) $d[$k] = post_int($k);
+    foreach (['discount', 'labor_rate', 'tax_parts', 'tax_labor', 'supplies_pct', 'supplies_cap'] as $k) $d[$k] = post_float($k) ?? 0;
+    $cid = post_int('customer_id') ?? 0; $d['customer_id'] = owns_row('customers', $cid) ? $cid : null;
+    $vehId = post_int('vehicle_id') ?? 0; $d['vehicle_id'] = $vehId && owns_vehicle($vehId) ? $vehId : null;
+    update('jobs', $d, (int)$id);
+    if (post('rate_to_lines') === '1') q("UPDATE job_lines SET price=? WHERE job_id=? AND kind='labor'", [$d['labor_rate'], $id]);
+    job_refresh((int)$id);
+    flash('Saved.'); redirect(url('job', ['id' => $id]));
+
+case 'line_add':
+    $jid = post_int('job_id') ?? 0;
+    if (!owns_row('jobs', $jid)) { http_response_code(404); exit('Not found'); }
+    $job = row('SELECT * FROM jobs WHERE id=?', [$jid]);
+    $kind = array_key_exists(post('kind'), LINE_KINDS) ? post('kind') : 'part';
+    $cat = owns_row('parts_catalog', post_int('catalog_id') ?? 0) ? row('SELECT * FROM parts_catalog WHERE id=?', [post_int('catalog_id')]) : null;
+    $cost = post_float('cost') ?? (float)($cat['cost'] ?? 0);
+    $price = post_float('price');
+    if ($price === null) $price = match ($kind) { 'labor' => (float)$job['labor_rate'], 'part' => $cat && $cat['price'] !== null ? (float)$cat['price'] : matrix_price($cost), default => $cost };
+    if (post('description') === '' && !$cat) { flash('Describe the line.', 'err'); redirect(url('job', ['id' => $jid]) . '#add'); }
+    insert('job_lines', ['job_id' => $jid, 'grp' => post('grp') ?: 'General', 'kind' => $kind, 'description' => post('description') ?: (string)$cat['name'], 'part_no' => post('part_no') ?: (string)($cat['part_no'] ?? ''),
+        'brand' => post('brand') ?: (string)($cat['brand'] ?? ''), 'supplier' => post('supplier') ?: (string)($cat['supplier'] ?? ''), 'qty' => post_float('qty') ?? 1, 'cost' => $cost, 'price' => $price,
+        'taxable' => post('taxable', '1') === '1' ? 1 : 0, 'status' => in_array($job['stage'], ['estimate', 'declined'], true) ? 'pending' : 'approved', 'pstatus' => 'quoted', 'catalog_id' => $cat['id'] ?? null,
+        'sort' => (int)col('SELECT COALESCE(MAX(sort),0)+1 FROM job_lines WHERE job_id=?', [$jid])]);
+    job_refresh($jid);
+    redirect(url('job', ['id' => $jid]) . '#g-' . rawurlencode(post('grp') ?: 'General'));
+
+case 'line_save':
+    if (!owns_row('job_lines', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $l = row('SELECT * FROM job_lines WHERE id=?', [$id]);
+    $d = ['description' => post('description'), 'part_no' => post('part_no'), 'brand' => post('brand'), 'supplier' => post('supplier'), 'qty' => post_float('qty') ?? 1, 'cost' => post_float('cost') ?? 0,
+        'price' => post_float('price') ?? 0, 'taxable' => post('taxable') === '1' ? 1 : 0];
+    if (post('reprice') === '1' && $l['kind'] === 'part') $d['price'] = matrix_price((float)$d['cost']);
+    if (array_key_exists(post('pstatus'), PART_STATUS)) $d['pstatus'] = post('pstatus');
+    update('job_lines', $d, (int)$id);
+    job_refresh((int)$l['job_id']);
+    redirect(url('job', ['id' => $l['job_id']]) . '#l' . $id);
+
+case 'line_delete':
+    if (!owns_row('job_lines', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $jid = (int)col('SELECT job_id FROM job_lines WHERE id=?', [$id]);
+    q('DELETE FROM job_lines WHERE id=?', [$id]); job_refresh($jid);
+    redirect(url('job', ['id' => $jid]));
+
+case 'group_action':
+    $jid = post_int('job_id') ?? 0;
+    if (!owns_row('jobs', $jid)) { http_response_code(404); exit('Not found'); }
+    $g = post('grp'); $do = post('do');
+    if (in_array($do, ['approved', 'declined', 'pending'], true)) q('UPDATE job_lines SET status=? WHERE job_id=? AND grp=?', [$do, $jid, $g]);
+    elseif ($do === 'rename' && post('to') !== '') q('UPDATE job_lines SET grp=? WHERE job_id=? AND grp=?', [post('to'), $jid, $g]);
+    elseif ($do === 'delete') q('DELETE FROM job_lines WHERE job_id=? AND grp=?', [$jid, $g]);
+    elseif ($do === 'save_canned') {
+        $lines = array_map(fn($l) => [$l['kind'], $l['description'], (float)$l['qty'], (float)$l['cost'], $l['kind'] === 'labor' ? null : (float)$l['price']], rows('SELECT * FROM job_lines WHERE job_id=? AND grp=? ORDER BY sort, id', [$jid, $g]));
+        insert('canned_jobs', ['user_id' => uid(), 'name' => $g, 'category' => 'My jobs', 'lines' => json_encode($lines), 'sort' => 0]);
+        flash('"' . $g . '" saved as a canned job.');
+    }
+    job_refresh($jid);
+    redirect(url('job', ['id' => $jid]) . '#g-' . rawurlencode($g));
+
+case 'canned_add':
+    $jid = post_int('job_id') ?? 0;
+    if (!owns_row('jobs', $jid) || !owns_row('canned_jobs', post_int('canned_id') ?? 0)) { http_response_code(404); exit('Not found'); }
+    job_add_canned(row('SELECT * FROM jobs WHERE id=?', [$jid]), row('SELECT * FROM canned_jobs WHERE id=?', [post_int('canned_id')]), post('grp') ?: null);
+    job_refresh($jid);
+    redirect(url('job', ['id' => $jid]));
+
+case 'job_auth':
+    // Record an authorization (in person, phone, text, email): who, when, how, for how much.
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $job = row('SELECT * FROM jobs WHERE id=?', [$id]);
+    if (post('approve_pending') === '1') q("UPDATE job_lines SET status='approved' WHERE job_id=? AND status='pending'", [$id]);
+    $amt = post_float('amount') ?? job_totals($job, job_lines((int)$id), 'approved')['total'];
+    insert('job_auth', ['job_id' => $id, 'amount' => $amt, 'method' => array_key_exists(post('method'), AUTH_METHODS) ? post('method') : 'in_person', 'by_name' => post('by_name'), 'note' => post('note'), 'at' => now()]);
+    if (in_array($job['stage'], ['estimate', 'declined'], true)) q("UPDATE jobs SET stage='approved', approved_at=?, approved_by=? WHERE id=?", [now(), post('by_name'), $id]);
+    job_refresh((int)$id);
+    flash('Authorization recorded: ' . money($amt) . '.'); redirect(url('job', ['id' => $id]));
+
+case 'job_stage':
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $job = row('SELECT * FROM jobs WHERE id=?', [$id]); $to = post('to');
+    if (!array_key_exists($to, JOB_STAGES)) { http_response_code(400); exit('Bad stage'); }
+    $d = ['stage' => $to];
+    if ($to === 'invoiced') {
+        if (!$job['inv_no']) $d['inv_no'] = next_number('inv');
+        $d['invoiced_at'] = now();
+        if (!$job['odometer_out'] && $job['vehicle_id']) $d['odometer_out'] = (int)col('SELECT mileage FROM vehicle WHERE id=?', [$job['vehicle_id']]) ?: $job['odometer_in'];
+        // Inventory: take installed catalog parts out of stock once.
+        foreach (rows("SELECT * FROM job_lines WHERE job_id=? AND kind='part' AND status='approved' AND catalog_id IS NOT NULL", [$id]) as $pl) q('UPDATE parts_catalog SET qty=qty-? WHERE id=? AND user_id=?', [(float)$pl['qty'], $pl['catalog_id'], uid()]);
+        q("UPDATE job_lines SET pstatus='installed' WHERE job_id=? AND kind='part' AND status='approved'", [$id]);
+        // The odometer reading goes into the vehicle's log too.
+        if (!empty($d['odometer_out']) && $job['vehicle_id'] && (int)$d['odometer_out'] > (int)col('SELECT mileage FROM vehicle WHERE id=?', [$job['vehicle_id']])) {
+            q('UPDATE vehicle SET mileage=?, mileage_updated=? WHERE id=?', [(int)$d['odometer_out'], today(), $job['vehicle_id']]);
+            insert('mileage_log', ['vehicle_id' => $job['vehicle_id'], 'logged_at' => today(), 'miles' => (int)$d['odometer_out'], 'note' => job_label($job + $d)]);
+        }
+    }
+    if ($to === 'approved' && !$job['approved_at']) $d['approved_at'] = now();
+    if ($to === 'declined') q("UPDATE job_lines SET status='declined' WHERE job_id=? AND status='pending'", [$id]);
+    if ($to === 'estimate') q("UPDATE job_lines SET status='pending' WHERE job_id=? AND status='approved'", [$id]);
+    update('jobs', $d, (int)$id);
+    job_refresh((int)$id);
+    flash(JOB_STAGES[$to] . '.'); redirect(url('job', ['id' => $id]));
+
+case 'job_link':
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    if (!col('SELECT token FROM jobs WHERE id=?', [$id])) q('UPDATE jobs SET token=? WHERE id=?', [bin2hex(random_bytes(16)), $id]);
+    q('UPDATE jobs SET sent_at=? WHERE id=?', [now(), $id]);
+    redirect(url('job', ['id' => $id]) . '#send');
+
+case 'payment_add':
+    $jid = post_int('job_id') ?? 0;
+    if (!owns_row('jobs', $jid) || (post_float('amount') ?? 0) == 0) { flash('Enter an amount.', 'err'); redirect(url('job', ['id' => $jid])); }
+    insert('job_payments', ['job_id' => $jid, 'amount' => post_float('amount'), 'method' => array_key_exists(post('method'), PAY_METHODS) ? post('method') : 'other', 'paid_on' => post('paid_on') ?: today(), 'note' => post('note'), 'created_at' => now()]);
+    job_refresh($jid);
+    flash('Payment recorded.'); redirect(url('job', ['id' => $jid]) . '#pay');
+
+case 'payment_delete':
+    if (!owns_row('job_payments', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $jid = (int)col('SELECT job_id FROM job_payments WHERE id=?', [$id]);
+    q('DELETE FROM job_payments WHERE id=?', [$id]);
+    if (col("SELECT stage FROM jobs WHERE id=?", [$jid]) === 'paid') q("UPDATE jobs SET stage='invoiced', paid_at=NULL WHERE id=?", [$jid]);
+    job_refresh($jid); redirect(url('job', ['id' => $jid]) . '#pay');
+
+case 'job_copy':
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $j = row('SELECT * FROM jobs WHERE id=?', [$id]);
+    unset($j['id']);
+    $nid = insert('jobs', array_merge($j, ['stage' => 'estimate', 'est_no' => next_number('est'), 'inv_no' => null, 'token' => null, 'sent_at' => null, 'approved_at' => null, 'approved_by' => null,
+        'approve_note' => null, 'invoiced_at' => null, 'paid_at' => null, 'paid' => 0, 'seen_approval' => 1, 'created_at' => now(), 'updated_at' => now()]));
+    foreach (job_lines((int)$id) as $l) { unset($l['id']); $l['job_id'] = $nid; $l['status'] = 'pending'; $l['pstatus'] = 'quoted'; insert('job_lines', $l); }
+    job_refresh($nid);
+    flash('Copied to a new estimate.'); redirect(url('job', ['id' => $nid]));
+
+case 'job_delete':
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    foreach (['job_lines', 'job_payments', 'job_auth', 'job_inspect'] as $t) q("DELETE FROM $t WHERE job_id=?", [$id]);
+    q('DELETE FROM jobs WHERE id=?', [$id]);
+    flash('Repair order deleted.'); redirect(url('jobs'));
+
+case 'inspect_start':
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    if (!col('SELECT 1 FROM job_inspect WHERE job_id=?', [$id])) { $i = 0; foreach (INSPECTION_TEMPLATE as $sec => $items) foreach ($items as $it) insert('job_inspect', ['job_id' => $id, 'section' => $sec, 'item' => $it, 'rating' => 'na', 'note' => '', 'sort' => $i++]); }
+    redirect(url('job', ['id' => $id]) . '#inspect');
+
+case 'inspect_save':
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    foreach ((array)($_POST['r'] ?? []) as $iid => $rating) if (array_key_exists((string)$rating, INSPECT_RATINGS)) q('UPDATE job_inspect SET rating=?, note=? WHERE id=? AND job_id=?', [$rating, trim((string)($_POST['n'][$iid] ?? '')), (int)$iid, $id]);
+    if (post('to_estimate') === '1') {
+        $job = row('SELECT * FROM jobs WHERE id=?', [$id]); $n = 0;
+        foreach (rows("SELECT * FROM job_inspect WHERE job_id=? AND rating IN ('now','soon') ORDER BY sort", [$id]) as $f) {
+            $g = 'Inspection: ' . $f['item'];
+            if (col('SELECT 1 FROM job_lines WHERE job_id=? AND grp=?', [$id, $g])) continue;
+            insert('job_lines', ['job_id' => $id, 'grp' => $g, 'kind' => 'note', 'description' => ($f['rating'] === 'now' ? 'Needs attention now' : 'Recommended soon') . ($f['note'] ? ': ' . $f['note'] : ''), 'qty' => 0, 'cost' => 0, 'price' => 0, 'taxable' => 0, 'status' => 'pending', 'pstatus' => 'quoted', 'sort' => 900 + $n++]);
+        }
+        flash($n . ' finding' . ($n === 1 ? '' : 's') . ' added to the estimate. Add labor and parts to each (or a canned job).');
+    } else flash('Inspection saved.');
+    redirect(url('job', ['id' => $id]) . '#inspect');
+
+case 'shop_save':
+    $d = [];
+    foreach (['name', 'address', 'phone', 'email', 'website', 'license', 'tax_id', 'currency', 'est_prefix', 'inv_prefix', 'warranty', 'est_terms', 'inv_terms'] as $k) $d[$k] = post($k);
+    foreach (['labor_rate', 'tax_parts', 'tax_labor', 'tax_fees', 'supplies_pct', 'supplies_cap', 'auth_threshold_pct', 'auth_threshold_amt'] as $k) $d[$k] = post_float($k) ?? 0;
+    foreach (['next_est', 'next_inv'] as $k) if (post_int($k)) $d[$k] = post_int($k);
+    $d['show_rates'] = post('show_rates') === '1' ? 1 : 0; $d['show_part_numbers'] = post('show_part_numbers') === '1' ? 1 : 0;
+    $m = [];
+    foreach (preg_split('/[\n,;]+/', post('matrix')) as $row) if (preg_match('/^\s*\$?([\d.]+)\s*[:=+\s]\s*([\d.]+)\s*%?\s*$/', $row, $mm)) $m[] = [(float)$mm[1], (float)$mm[2]];
+    if ($m) { usort($m, fn($a, $b) => $a[0] <=> $b[0]); $d['matrix'] = $m; }
+    shop_save($d);
+    flash('Shop settings saved.'); redirect(url('shop'));
+
+case 'canned_save':
+    $cid = post_int('id') ?? 0;
+    if ($cid && !owns_row('canned_jobs', $cid)) { http_response_code(404); exit('Not found'); }
+    $lines = [];
+    foreach (preg_split('/\R/', post('lines')) as $ln) {
+        // "labor | Replace thermostat | 1.2"  or  "part | Thermostat | 1 | 18.50"
+        $p = array_map('trim', explode('|', $ln)); if (count($p) < 2 || !array_key_exists(strtolower($p[0]), LINE_KINDS)) continue;
+        $lines[] = [strtolower($p[0]), $p[1], (float)($p[2] ?? 1) ?: 1, (float)($p[3] ?? 0)];
+    }
+    $data = ['name' => post('name'), 'category' => post('category') ?: 'My jobs', 'lines' => json_encode($lines)];
+    if ($cid) update('canned_jobs', $data, $cid); else insert('canned_jobs', $data + ['user_id' => uid(), 'sort' => 0]);
+    flash('Canned job saved.'); redirect(url('shop') . '#canned');
+
+case 'canned_delete':
+    if (owns_row('canned_jobs', (int)$id)) q('DELETE FROM canned_jobs WHERE id=?', [$id]);
+    redirect(url('shop') . '#canned');
+
+case 'catalog_save':
+    $pid = post_int('id') ?? 0;
+    if ($pid && !owns_row('parts_catalog', $pid)) { http_response_code(404); exit('Not found'); }
+    $data = ['part_no' => post('part_no'), 'name' => post('name'), 'brand' => post('brand'), 'supplier' => post('supplier'), 'cost' => post_float('cost') ?? 0, 'price' => post_float('price'),
+        'qty' => post_float('qty') ?? 0, 'location' => post('location'), 'notes' => post('notes'), 'updated_at' => now()];
+    if ($data['name'] === '') { flash('Name the part.', 'err'); redirect(url('shop') . '#catalog'); }
+    if ($pid) update('parts_catalog', $data, $pid); else insert('parts_catalog', $data + ['user_id' => uid()]);
+    flash('Part saved.'); redirect(url('shop') . '#catalog');
+
+case 'catalog_delete':
+    if (owns_row('parts_catalog', (int)$id)) q('DELETE FROM parts_catalog WHERE id=?', [$id]);
+    redirect(url('shop') . '#catalog');
+
+case 'catalog_import':
+    // CSV: part_no, name, brand, cost, price, qty, supplier, location (header row optional)
+    if (empty($_FILES['csv']['tmp_name']) || !is_uploaded_file($_FILES['csv']['tmp_name'])) { flash('Choose a CSV file.', 'err'); redirect(url('shop') . '#catalog'); }
+    $n = 0;
+    foreach (array_slice(preg_split('/\R/', (string)file_get_contents($_FILES['csv']['tmp_name'])), 0, 5000) as $ln) {
+        $c = str_getcsv($ln, ',', '"', '\\'); if (count($c) < 2 || !is_numeric(str_replace(['$', ','], '', $c[3] ?? '0'))) continue;
+        insert('parts_catalog', ['user_id' => uid(), 'part_no' => trim($c[0]), 'name' => trim($c[1]), 'brand' => trim($c[2] ?? ''), 'cost' => (float)str_replace(['$', ','], '', $c[3] ?? 0),
+            'price' => ($c[4] ?? '') !== '' ? (float)str_replace(['$', ','], '', $c[4]) : null, 'qty' => (float)($c[5] ?? 0), 'supplier' => trim($c[6] ?? ''), 'location' => trim($c[7] ?? ''), 'notes' => '', 'updated_at' => now()]);
+        $n++;
+    }
+    flash($n . ' parts imported.'); redirect(url('shop') . '#catalog');
 
 case 'recalls_check':
     $n = recalls_refresh(vid(), true);

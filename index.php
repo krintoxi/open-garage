@@ -13,7 +13,7 @@ if (!MULTI_USER && $pwHash === '' && !is_local_request()) {
     exit;
 }
 $authed = MULTI_USER ? (uid() > 0 && current_user() !== null) : ($pwHash === '' || hash_equals(auth_tag($pwHash), (string)($_SESSION['authed'] ?? '')));
-const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify', 'record', 'manifest', 'unsub', 'lookup', 'yt'];
+const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify', 'record', 'manifest', 'unsub', 'lookup', 'yt', 'quote'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // A body larger than post_max_size arrives with $_POST and $_FILES empty: explain it instead of "Bad token".
@@ -34,6 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash(login_locked_for($ip) ? 'Too many wrong passwords. Try again in 15 min.' : 'Wrong password.', 'err'); redirect(url('login'));
     }
     if ($action === 'unsub') { require APP_ROOT . '/app/views/unsub.php'; exit; }
+    // Customer approving an estimate from their link (the token is the authorization; no account).
+    if (($_GET['p'] ?? '') === 'quote' && $action === '') { require APP_ROOT . '/app/views/quote.php'; exit; }
     // Phone share sheet ("Share -> this app" from a scanner app): the installed web app receives the report here.
     if (($_GET['p'] ?? '') === 'share_in') {
         if (!$authed) redirect(url('login'));
@@ -64,7 +66,7 @@ if ($page === 'yt') {
     echo json_encode($ok ? youtube_search($q) : ['items' => [], 'fallback' => 'https://www.youtube.com/results?search_query=' . urlencode($q)], JSON_UNESCAPED_SLASHES);
     exit;
 }
-if (in_array($page, ['signup', 'forgot', 'reset', 'record', 'unsub'], true)) { require APP_ROOT . '/app/views/' . $page . '.php'; exit; }
+if (in_array($page, ['signup', 'forgot', 'reset', 'record', 'unsub', 'quote'], true)) { require APP_ROOT . '/app/views/' . $page . '.php'; exit; }
 // Web app manifest (install to the home screen), named after this instance.
 if ($page === 'manifest') {
     session_write_close();
@@ -133,6 +135,17 @@ if ($page === 'recalls_sync') {
     exit;
 }
 
+// Parts catalog search for the repair-order "Find part" panel (JSON).
+if ($page === 'parts_q') {
+    session_write_close();
+    header('Content-Type: application/json');
+    $pq = trim((string)($_GET['q'] ?? ''));
+    $res = $pq === '' ? [] : rows('SELECT id, part_no, name, brand, supplier, cost, price, qty, location FROM parts_catalog WHERE user_id=? AND (name LIKE ? OR part_no LIKE ? OR brand LIKE ?) ORDER BY qty > 0 DESC, name LIMIT 15', [uid(), "%$pq%", "%$pq%", "%$pq%"]);
+    foreach ($res as &$r) { $r['sell'] = $r['price'] !== null ? (float)$r['price'] : matrix_price((float)$r['cost']); $r['sell_fmt'] = money($r['sell']); $r['cost_fmt'] = money((float)$r['cost']); } unset($r);
+    echo json_encode(['items' => $res]);
+    exit;
+}
+
 // VIN lookup for the Add-vehicle form (JSON; signed-in only).
 if ($page === 'vin') {
     session_write_close();
@@ -142,7 +155,7 @@ if ($page === 'vin') {
 }
 
 $pages = ['dashboard','issues','issue','issue_form','codes','common','maintenance','inspections','inspection_new','inspection',
-          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share','diagnose','customers','tools'];
+          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share','diagnose','customers','tools','jobs','job','shop','job_print'];
 if (!in_array($page, $pages, true)) { http_response_code(404); $page = 'dashboard'; }
 
 if ($page === 'export' && MULTI_USER) {
@@ -162,7 +175,8 @@ if ($page === 'export') {
 
 // A page about one record (an issue, a visit...) shows that record's vehicle, even if another vehicle was selected.
 // No vehicle yet (fresh install): everything starts at the Garage page's "Add a vehicle" form.
-if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links', 'diagnose', 'customers', 'tools'], true)) redirect(url('garage') . '#add');
+if (!vid() && is_pro() && $page === 'dashboard') redirect(url('jobs'));
+if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links', 'diagnose', 'customers', 'tools', 'jobs', 'job', 'shop', 'job_print'], true)) redirect(url('garage') . '#add');
 $follow = ['issue' => 'issues', 'issue_form' => 'issues', 'visit' => 'visits', 'visit_form' => 'visits', 'inspection' => 'inspections', 'brief' => 'visits'];
 if (isset($follow[$page]) && ($rid = (int)($_GET['id'] ?? 0))) {
     if (!owns($follow[$page], $rid)) { http_response_code(404); $page = 'garage'; }
@@ -175,5 +189,5 @@ $use3d = false;
 ob_start();
 require APP_ROOT . '/app/views/' . $page . '.php';
 $content = ob_get_clean();
-if ($page === 'brief' || $page === 'login') { echo $content; exit; }
+if ($page === 'brief' || $page === 'login' || $page === 'job_print') { echo $content; exit; }
 require APP_ROOT . '/app/views/layout.php';
