@@ -13,7 +13,7 @@ if (!MULTI_USER && $pwHash === '' && !is_local_request()) {
     exit;
 }
 $authed = MULTI_USER ? (uid() > 0 && current_user() !== null) : ($pwHash === '' || hash_equals(auth_tag($pwHash), (string)($_SESSION['authed'] ?? '')));
-const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify', 'record', 'manifest', 'unsub'];
+const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify', 'record', 'manifest', 'unsub', 'lookup', 'yt'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // A body larger than post_max_size arrives with $_POST and $_FILES empty: explain it instead of "Bad token".
@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($host !== '' && parse_url($ref, PHP_URL_HOST) === explode(':', $host)[0] ? $ref : url($authed ? 'dashboard' : 'login'));
     }
     $action = post('action');
-    if (MULTI_USER && in_array($action, ['login', 'signup', 'forgot', 'reset', 'logout'], true)) { require APP_ROOT . '/app/auth.php'; exit; }
+    if (MULTI_USER && in_array($action, ['login', 'signup', 'forgot', 'reset', 'logout', 'guest'], true)) { require APP_ROOT . '/app/auth.php'; exit; }
     if ($action === 'login') {
         csrf_check();
         $ip = login_ip();
@@ -34,6 +34,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash(login_locked_for($ip) ? 'Too many wrong passwords. Try again in 15 min.' : 'Wrong password.', 'err'); redirect(url('login'));
     }
     if ($action === 'unsub') { require APP_ROOT . '/app/views/unsub.php'; exit; }
+    // Phone share sheet ("Share -> this app" from a scanner app): the installed web app receives the report here.
+    if (($_GET['p'] ?? '') === 'share_in') {
+        if (!$authed) redirect(url('login'));
+        $text = trim(post('title') . "\n" . post('text') . "\n" . post('url')); $src = 'shared';
+        if (!empty($_FILES['scan']['name'])) { $up = scan_upload_text($_FILES['scan']); if (!empty($up['error'])) flash($up['error'], 'err'); $text .= "\n" . $up['text']; $src = 'shared ' . ($up['via'] ?? 'file'); }
+        $rid = insert('diag_reports', ['user_id' => uid(), 'vehicle_id' => vid() ?: null, 'codes' => json_encode(obd_extract_codes($text)), 'freeze' => mb_substr($text, 0, 60000), 'symptoms' => '[]', 'notes' => '', 'source' => $src, 'created_at' => now()]);
+        redirect(url('diagnose', ['r' => $rid]));
+    }
     if (!$authed) redirect(url('login'));
     require __DIR__ . '/app/actions.php';
     exit;
@@ -44,6 +52,18 @@ if (!MULTI_USER && in_array($page, ['signup', 'forgot', 'reset', 'verify'], true
 if (!$authed && !in_array($page, PUBLIC_PAGES, true)) redirect(url('login'));
 if ($authed && in_array($page, ['login', 'signup', 'forgot'], true)) redirect(url('dashboard'));
 if (MULTI_USER && $page === 'verify') { require APP_ROOT . '/app/auth.php'; exit; }
+if ($page === 'login' && MULTI_USER) guests_purge();
+// Public code lookup and video search (hosted instances): no account needed, rate-limited per network.
+if (in_array($page, ['lookup', 'yt'], true) && !$authed && !(MULTI_USER && PUBLIC_LOOKUP)) redirect(url('login'));
+if ($page === 'lookup') { require APP_ROOT . '/app/views/lookup.php'; exit; }
+if ($page === 'yt') {
+    session_write_close();
+    header('Content-Type: application/json');
+    $ok = $authed ? rate_ok('yt:' . uid(), 80, 86400) : rate_ok('yt-ip:' . login_ip(), 30, 86400);
+    $q = (string)($_GET['q'] ?? '');
+    echo json_encode($ok ? youtube_search($q) : ['items' => [], 'fallback' => 'https://www.youtube.com/results?search_query=' . urlencode($q)], JSON_UNESCAPED_SLASHES);
+    exit;
+}
 if (in_array($page, ['signup', 'forgot', 'reset', 'record', 'unsub'], true)) { require APP_ROOT . '/app/views/' . $page . '.php'; exit; }
 // Web app manifest (install to the home screen), named after this instance.
 if ($page === 'manifest') {
@@ -53,7 +73,9 @@ if ($page === 'manifest') {
     echo json_encode(['name' => APP_NAME, 'short_name' => APP_NAME, 'id' => './', 'start_url' => './index.php?p=dashboard', 'scope' => './', 'display' => 'standalone',
         'background_color' => '#07080a', 'theme_color' => '#07080a', 'description' => 'Your vehicles: problems, service, mechanic visits and photos in one place.',
         'icons' => [['src' => 'assets/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'], ['src' => 'assets/apple-touch-icon.png', 'sizes' => '180x180', 'type' => 'image/png']],
-        'shortcuts' => [['name' => 'Report a problem', 'url' => './index.php?p=issue_form'], ['name' => 'Update mileage', 'url' => './index.php?p=mileage'], ['name' => 'Maintenance', 'url' => './index.php?p=maintenance']]],
+        'share_target' => ['action' => './index.php?p=share_in', 'method' => 'POST', 'enctype' => 'multipart/form-data',
+            'params' => ['title' => 'title', 'text' => 'text', 'url' => 'url', 'files' => [['name' => 'scan', 'accept' => ['image/*', 'application/pdf', 'text/plain', 'text/csv', '.csv', '.pdf']]]]],
+        'shortcuts' => [['name' => 'Diagnose a code', 'url' => './index.php?p=diagnose'], ['name' => 'Report a problem', 'url' => './index.php?p=issue_form'], ['name' => 'Update mileage', 'url' => './index.php?p=mileage'], ['name' => 'Maintenance', 'url' => './index.php?p=maintenance']]],
         JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -115,12 +137,12 @@ if ($page === 'recalls_sync') {
 if ($page === 'vin') {
     session_write_close();
     header('Content-Type: application/json');
-    echo json_encode(vin_decode((string)($_GET['vin'] ?? '')), JSON_UNESCAPED_SLASHES);
+    echo json_encode(vin_decode_world((string)($_GET['vin'] ?? '')), JSON_UNESCAPED_SLASHES);
     exit;
 }
 
 $pages = ['dashboard','issues','issue','issue_form','codes','common','maintenance','inspections','inspection_new','inspection',
-          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share'];
+          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share','diagnose','customers','tools'];
 if (!in_array($page, $pages, true)) { http_response_code(404); $page = 'dashboard'; }
 
 if ($page === 'export' && MULTI_USER) {
@@ -140,7 +162,7 @@ if ($page === 'export') {
 
 // A page about one record (an issue, a visit...) shows that record's vehicle, even if another vehicle was selected.
 // No vehicle yet (fresh install): everything starts at the Garage page's "Add a vehicle" form.
-if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links'], true)) redirect(url('garage') . '#add');
+if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links', 'diagnose', 'customers', 'tools'], true)) redirect(url('garage') . '#add');
 $follow = ['issue' => 'issues', 'issue_form' => 'issues', 'visit' => 'visits', 'visit_form' => 'visits', 'inspection' => 'inspections', 'brief' => 'visits'];
 if (isset($follow[$page]) && ($rid = (int)($_GET['id'] ?? 0))) {
     if (!owns($follow[$page], $rid)) { http_response_code(404); $page = 'garage'; }

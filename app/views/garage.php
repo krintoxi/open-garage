@@ -13,6 +13,8 @@ foreach ($list as $gv) {
 }
 ?>
 <div class="head"><div><h1>Garage</h1><p><?= $list ? 'Every vehicle you look after. Tap one to work on it.' : 'Welcome. Add your first vehicle below to get started.' ?></p></div><a class="btn primary" href="#add">+ Add a vehicle</a></div>
+<?php require APP_ROOT . '/app/views/_guest_keep.php'; ?>
+<?php if (is_pro()): $nc = (int)col('SELECT COUNT(*) FROM customers WHERE user_id=?', [uid()]); ?><div class="callout" style="margin-bottom:14px">Mechanic mode: these are your own vehicles. Customer vehicles live under <a href="<?= url('customers') ?>">Customers</a> (<?= $nc ?>).</div><?php endif; ?>
 <div class="garage-grid">
   <?php foreach ($list as $gv): $id = (int)$gv['id']; $st = $stats[$id]; $kind = $gv['kind'] ?: 'car'; ?>
   <a class="vcard <?= $id === (int)($veh['id'] ?? 0) ? 'on' : '' ?>" href="<?= url('dashboard', ['v' => $id]) ?>" data-tilt>

@@ -6,6 +6,7 @@ garage-vision: image jobs for Open Garage (showroom cut-out + depth, and experim
   POST /mesh/start    body: a photo/cutout -> JSON {job}         (single-photo 3D, experimental, ~1 min)
   GET  /mesh/status?job=ID                 -> JSON {status: queued|running|done|error|missing, progress}
   GET  /mesh/result?job=ID                 -> model/gltf-binary
+  POST /read-scan     body: a photo of a scan tool screen -> JSON {text}   (codes + data lines, read by a local vision LLM)
   GET  /health                             -> JSON {ok, busy, gaming, queue}
 
 Binds to the machine's Tailscale address only (or loopback with --loopback),
@@ -39,6 +40,32 @@ MESH = {}  # job -> {status, progress, created, path, error}
 # Single-photo 3D (TripoSR) needs several GB: it only starts when plenty of memory is free, and its model is dropped
 # straight after each job, so it can share a machine with other work.
 MESH_MIN_FREE_PCT = int(os.environ.get('GARAGE_VISION_MESH_MIN_FREE', '45'))
+# Reading scanner screenshots uses a local Ollama vision model (several GB while loaded; unloaded right after each read).
+OCR_MODEL = os.environ.get('GARAGE_VISION_OCR_MODEL', 'gemma4:12b')
+OCR_URL = os.environ.get('GARAGE_VISION_OLLAMA', 'http://127.0.0.1:11434')
+OCR_MIN_FREE_PCT = int(os.environ.get('GARAGE_VISION_OCR_MIN_FREE', '50'))
+OCR_PROMPT = ("This is a photo or screenshot of a car diagnostic scan tool or phone app. Transcribe it as plain text. "
+              "First list every diagnostic trouble code exactly as shown (format like P0171, C0035, U0100), one per line, each followed by its description if shown. "
+              "Then list every live-data or freeze-frame value shown as 'Name: value unit', one per line. "
+              "Output only the transcription, no commentary. If there are no codes or values, output NONE.")
+
+
+def read_scan(data):
+    import urllib.request
+    from PIL import Image
+    img = load_image(data).convert('RGB')
+    # Small screenshots: enlarge so small characters (P0171 vs P0137) are legible to the model.
+    if img.width < 1100:
+        f = min(3.0, 1300 / img.width)
+        img = img.resize((int(img.width * f), int(img.height * f)), Image.LANCZOS)
+    buf = io.BytesIO(); img.save(buf, 'PNG')
+    req = {'model': OCR_MODEL, 'messages': [{'role': 'user', 'content': OCR_PROMPT, 'images': [base64.b64encode(buf.getvalue()).decode()]}], 'stream': False, 'think': False,
+           'keep_alive': 0, 'options': {'temperature': 0, 'num_ctx': 6144, 'num_predict': 900}}
+    r = urllib.request.Request(OCR_URL.rstrip('/') + '/api/chat', data=json.dumps(req).encode(), headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(r, timeout=110) as resp:
+        out = json.loads(resp.read().decode())
+    text = ((out.get('message') or {}).get('content') or '').strip()
+    return {'text': '' if text.upper() == 'NONE' else text[:20000]}
 
 
 def free_memory_pct():
@@ -317,10 +344,22 @@ class Handler(BaseHTTPRequestHandler):
         if gaming_on():
             return self._send(503, {'error': 'gaming mode is on'})
         path = urlparse(self.path).path
-        if path not in ('/showroom', '/mesh/start'):
+        if path not in ('/showroom', '/mesh/start', '/read-scan'):
             return self._send(404, {'error': 'no such route'})
         data = self._body()
         if data is None: return
+        if path == '/read-scan':
+            if free_memory_pct() < OCR_MIN_FREE_PCT:
+                return self._send(503, {'error': 'busy: not enough free memory right now'})
+            if not GPU.acquire(timeout=60):
+                return self._send(503, {'error': 'busy'})
+            try:
+                return self._send(200, read_scan(data))
+            except Exception as e:
+                print('read-scan failed:', repr(e), flush=True)
+                return self._send(422, {'error': 'could not read that image'})
+            finally:
+                GPU.release()
         if path == '/showroom':
             if not GPU.acquire(timeout=30):
                 return self._send(503, {'error': 'busy'})

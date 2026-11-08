@@ -247,6 +247,7 @@ function delete_vehicle(int $vidDel): void {
     q('DELETE FROM visit_issues WHERE visit_id IN (SELECT id FROM visits WHERE vehicle_id=?) OR issue_id IN (SELECT id FROM issues WHERE vehicle_id=?)', [$vidDel, $vidDel]);
     q('DELETE FROM inspection_results WHERE inspection_id IN (SELECT id FROM inspections WHERE vehicle_id=?)', [$vidDel]);
     foreach (SCOPED as $t) q("DELETE FROM $t WHERE vehicle_id=?", [$vidDel]);
+    q('DELETE FROM diag_reports WHERE vehicle_id=?', [$vidDel]);
     q('DELETE FROM vehicle WHERE id=?', [$vidDel]);
     foreach (array_unique($paths) as $pth) {
         if ((int)col('SELECT COUNT(*) FROM photos WHERE path=?', [$pth]) || (int)col('SELECT COUNT(*) FROM vehicle WHERE ? IN (photo, hero_cutout, hero_depth, mesh_glb)', [$pth])) continue;
@@ -403,6 +404,7 @@ function account_export(int $userId): array {
         $out['vehicles'][] = $e;
     }
     $out['mechanics'] = rows('SELECT * FROM mechanics WHERE user_id=?', [$userId]);
+    foreach (['customers', 'diag_reports', 'tool_links'] as $t) $out[$t] = rows("SELECT * FROM $t WHERE user_id=?", [$userId]);
     $out['links'] = rows('SELECT * FROM links WHERE user_id=?', [$userId]);
     return $out;
 }

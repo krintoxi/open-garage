@@ -17,7 +17,7 @@ const OWNED_BY_ACTION = [
 ];
 if ($id && isset(OWNED_BY_ACTION[$action]) && !owns(OWNED_BY_ACTION[$action], $id)) { http_response_code(404); exit('Not found'); }
 // Everything below works on the current vehicle; a new account has none until it adds one.
-if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
+if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set', 'mode_set', 'guest_keep', 'guest_end', 'diag_run', 'diag_delete', 'diag_to_vehicle', 'customer_save', 'customer_delete', 'customer_vehicle_add', 'tool_save', 'tool_preset', 'tool_delete'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
 
 switch ($action) {
 
@@ -40,8 +40,7 @@ case 'account_delete':
     // Multi-user: delete the account and everything in it.
     $u = current_user();
     if (!$u || !password_verify(post('current_password'), $u['pw_hash'])) { flash('Password is wrong. Nothing was deleted.', 'err'); redirect(url('vehicle') . '#account'); }
-    foreach (rows('SELECT id FROM vehicle WHERE user_id=?', [$u['id']]) as $dv) delete_vehicle((int)$dv['id']);
-    q('DELETE FROM mechanics WHERE user_id=?', [$u['id']]); q('DELETE FROM links WHERE user_id=?', [$u['id']]); q('DELETE FROM users WHERE id=?', [$u['id']]);
+    account_wipe((int)$u['id']);
     $_SESSION = []; session_regenerate_id(true);
     flash('Your account and everything in it were deleted.'); redirect(url('login'));
 
@@ -99,7 +98,7 @@ case 'vehicle_save':
     flash('Vehicle saved.'); redirect(url('vehicle'));
 
 case 'vehicle_add':
-    if (MULTI_USER && count(vehicles()) >= LIMIT_VEHICLES) { flash('This account can hold up to ' . LIMIT_VEHICLES . ' vehicles.', 'err'); redirect(url('garage')); }
+    if (MULTI_USER && count(vehicles()) >= (is_guest() ? 3 : LIMIT_VEHICLES)) { flash(is_guest() ? 'A guest garage holds up to 3 vehicles. Keep your garage (free) to add more.' : 'This account can hold up to ' . LIMIT_VEHICLES . ' vehicles.', 'err'); redirect(url('garage')); }
     $kind = array_key_exists(post('kind'), VEHICLE_KINDS) ? post('kind') : 'car';
     if (post('make') === '' || post('model') === '') { flash('Make and model are required.', 'err'); redirect(url('garage') . '#add'); }
     $miles = post_int('miles') ?? 0;
@@ -403,6 +402,140 @@ case 'link_save':
 
 case 'link_delete':
     q('DELETE FROM links WHERE id=?', [$id]); redirect(url('links'));
+
+case 'mode_set':
+    ui_mode(post('mode') === 'pro' ? 'pro' : 'diy');
+    redirect(post('back') ?: url('dashboard'));
+
+case 'guest_keep':
+    // Turn a guest garage into a normal account: everything already entered stays.
+    if (!is_guest()) redirect(url('vehicle'));
+    $email = mb_strtolower(post('email'));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen(post('password')) < 8) { flash('Enter a valid email and a password of at least 8 characters.', 'err'); redirect(url('vehicle') . '#access'); }
+    if (col('SELECT 1 FROM users WHERE email=?', [$email])) { flash('That email already has an account. Use another email, or sign in to that account.', 'err'); redirect(url('vehicle') . '#access'); }
+    q('UPDATE users SET email=?, pw_hash=?, is_guest=0, guest_expires=NULL, name=?, remind_weekly=? WHERE id=?', [$email, password_hash(post('password'), PASSWORD_DEFAULT), post('name'), post('remind') === '1' && reminders_available() ? 1 : 0, uid()]);
+    $u = current_user();
+    $sent = mail_verify($u);
+    flash('Your garage is now a full account.' . ($sent ? ' Check your email to confirm the address.' : ''));
+    redirect(url('dashboard'));
+
+case 'guest_end':
+    if (!is_guest()) redirect(url('vehicle'));
+    account_wipe(uid());
+    $_SESSION = []; session_regenerate_id(true);
+    flash('Your guest garage was deleted.'); redirect(url('login'));
+
+case 'diag_run':
+    // Vehicle: one of the account's vehicles (own or customer), or typed in / decoded from a VIN for a one-off lookup.
+    $vehId = post_int('vehicle_id') ?? 0;
+    $vj = null;
+    if ($vehId > 0) { if (!owns_vehicle($vehId)) { http_response_code(404); exit('Not found'); } }
+    else {
+        $vj = ['year' => post_int('year'), 'make' => post('make'), 'model' => post('model'), 'engine' => post('engine'), 'vin' => strtoupper(post('vin')), 'trim' => post('trim'), 'country' => post('country')];
+        $vehId = null;
+    }
+    $text = post('codes') . "\n" . post('freeze'); $src = 'typed';
+    if (!empty($_FILES['scan']['name'])) {
+        $up = scan_upload_text($_FILES['scan']);
+        if (!empty($up['error'])) flash($up['error'], 'err');
+        $text .= "\n" . $up['text']; $src = $up['via'] ?? 'upload';
+    }
+    $codes = obd_extract_codes($text);
+    $sym = array_values(array_intersect((array)($_POST['sym'] ?? []), array_keys(DIAG_SYMPTOMS)));
+    if (!$codes && !$sym && trim(post('freeze')) === '' && empty($up['text'])) { flash('Enter at least one code (like P0171), upload a scan, or pick a symptom.', 'err'); redirect(url('diagnose')); }
+    $rid = insert('diag_reports', ['user_id' => uid(), 'vehicle_id' => $vehId, 'customer_id' => $vehId ? col('SELECT customer_id FROM vehicle WHERE id=?', [$vehId]) : (owns_row('customers', post_int('customer_id') ?? 0) ? post_int('customer_id') : null),
+        'vehicle_json' => $vj ? json_encode($vj) : null, 'codes' => json_encode($codes), 'freeze' => mb_substr(trim(post('freeze') . "\n" . (($src !== 'typed' && !empty($up['text'])) ? $up['text'] : '')), 0, 60000),
+        'symptoms' => json_encode($sym), 'notes' => post('notes'), 'source' => $src, 'created_at' => now()]);
+    redirect(url('diagnose', ['r' => $rid]));
+
+case 'diag_delete':
+    if (!owns_row('diag_reports', (int)$id)) { http_response_code(404); exit('Not found'); }
+    q('DELETE FROM diag_reports WHERE id=?', [$id]);
+    flash('Report deleted.'); redirect(url('diagnose'));
+
+case 'diag_apply':
+    // Put a report's codes on the vehicle's code history, and (optionally) open an issue per code with the guidance.
+    $r = owns_row('diag_reports', (int)$id) ? row('SELECT * FROM diag_reports WHERE id=?', [$id]) : null;
+    if (!$r || !$r['vehicle_id']) { http_response_code(404); exit('Not found'); }
+    vid((int)$r['vehicle_id']); $v = vehicle();
+    $added = 0; $iss = 0;
+    foreach (json_decode((string)$r['codes'], true) ?: [] as $c) {
+        if (!col("SELECT 1 FROM code_events WHERE vehicle_id=? AND code=? AND status='active'", [$v['id'], $c])) { insert('code_events', ['code' => $c, 'seen_on' => substr((string)$r['created_at'], 0, 10), 'miles' => (int)$v['mileage'], 'status' => 'active', 'note' => 'From diagnosis #' . $r['id']]); $added++; }
+        if (post('issues') === '1' && !col("SELECT 1 FROM issues WHERE vehicle_id=? AND title LIKE ? AND status IN ('open','monitoring','scheduled')", [$v['id'], $c . '%'])) {
+            $L = obd_lookup($c, $v); $k = $L['kb'] ?? [];
+            insert('issues', ['title' => $c . ' · ' . $L['title'], 'system' => 'Engine', 'location' => 'engine', 'severity' => $L['sev'], 'status' => 'open',
+                'summary' => (string)($k['plain'] ?? ''), 'evidence' => 'Code ' . $c . ' read on ' . fmt_date($r['created_at']) . ' at ' . number_format((int)$v['mileage']) . ' mi.',
+                'likely_causes' => implode("\n", array_map(fn($x) => '- ' . $x[0], $k['causes'] ?? [])), 'owner_guidance' => implode("\n", array_map(fn($x) => '- ' . $x, $k['diy'] ?? [])),
+                'mechanic_guidance' => implode("\n", array_map(fn($x) => '- ' . $x, array_merge($k['tests'] ?? [], $L['patterns']))),
+                'opened_on' => today(), 'created_at' => now(), 'updated_at' => now(), 'est_cost' => isset($k['cost']) ? '$' . $k['cost'][0] . '-' . $k['cost'][1] : '']);
+            $iss++;
+        }
+    }
+    flash($added . ' code' . ($added === 1 ? '' : 's') . ' added to the code history' . ($iss ? ' and ' . $iss . ' issue' . ($iss === 1 ? '' : 's') . ' opened with the guidance' : '') . '.');
+    redirect(url('diagnose', ['r' => $r['id']]));
+
+case 'diag_to_vehicle':
+    // A one-off lookup becomes a vehicle in the garage (own, or a customer's in Mechanic mode).
+    $r = owns_row('diag_reports', (int)$id) ? row('SELECT * FROM diag_reports WHERE id=?', [$id]) : null;
+    if (!$r || $r['vehicle_id'] || !$r['vehicle_json']) { http_response_code(404); exit('Not found'); }
+    $vj = json_decode((string)$r['vehicle_json'], true) ?: [];
+    $cust = owns_row('customers', post_int('customer_id') ?? 0) ? post_int('customer_id') : ($r['customer_id'] ?: null);
+    if ($cust ? (int)col('SELECT COUNT(*) FROM vehicle WHERE user_id=? AND customer_id IS NOT NULL', [uid()]) >= LIMIT_CUSTOMER_VEHICLES : (MULTI_USER && count(vehicles()) >= LIMIT_VEHICLES)) { flash('Vehicle limit reached for this account.', 'err'); redirect(url('diagnose', ['r' => $id])); }
+    $kind = 'car';
+    $nid = insert('vehicle', ['kind' => $kind, 'year' => $vj['year'] ?? null, 'make' => $vj['make'] ?? '', 'model' => $vj['model'] ?? '', 'trim' => $vj['trim'] ?? '', 'engine' => $vj['engine'] ?? '', 'vin' => $vj['vin'] ?? '',
+        'mileage' => post_int('miles') ?? 0, 'mileage_updated' => today(), 'notes' => '', 'mods' => '', 'customer_id' => $cust, 'sort' => (int)col('SELECT COALESCE(MAX(sort),0)+1 FROM vehicle')]);
+    seed_vehicle_templates($nid, $kind);
+    q('UPDATE diag_reports SET vehicle_id=?, customer_id=? WHERE id=?', [$nid, $cust, $id]);
+    flash(trim(($vj['year'] ?? '') . ' ' . ($vj['make'] ?? '') . ' ' . ($vj['model'] ?? '')) . ' added' . ($cust ? ' to the customer.' : ' to your garage.'));
+    redirect(url('diagnose', ['r' => $id]));
+
+case 'customer_save':
+    $cid = post_int('id') ?? 0;
+    if ($cid && !owns_row('customers', $cid)) { http_response_code(404); exit('Not found'); }
+    if (post('name') === '') { flash('Name is required.', 'err'); redirect(url('customers')); }
+    $data = ['name' => post('name'), 'phone' => post('phone'), 'email' => post('email'), 'notes' => post('notes')];
+    if ($cid) update('customers', $data, $cid); else $cid = insert('customers', $data + ['user_id' => uid(), 'created_at' => now()]);
+    flash('Customer saved.'); redirect(url('customers', ['c' => $cid]));
+
+case 'customer_delete':
+    $cid = post_int('id') ?? 0;
+    if (!owns_row('customers', $cid)) { http_response_code(404); exit('Not found'); }
+    foreach (rows('SELECT id FROM vehicle WHERE customer_id=? AND user_id=?', [$cid, uid()]) as $cv) delete_vehicle((int)$cv['id']);
+    q('DELETE FROM diag_reports WHERE customer_id=? AND user_id=?', [$cid, uid()]);
+    q('DELETE FROM customers WHERE id=?', [$cid]);
+    flash('Customer, their vehicles and reports deleted.'); redirect(url('customers'));
+
+case 'customer_vehicle_add':
+    $cid = post_int('customer_id') ?? 0;
+    if (!owns_row('customers', $cid)) { http_response_code(404); exit('Not found'); }
+    if ((int)col('SELECT COUNT(*) FROM vehicle WHERE user_id=? AND customer_id IS NOT NULL', [uid()]) >= LIMIT_CUSTOMER_VEHICLES) { flash('Customer vehicle limit reached.', 'err'); redirect(url('customers', ['c' => $cid])); }
+    if (post('make') === '' && post('vin') === '') { flash('Enter a VIN or at least the make and model.', 'err'); redirect(url('customers', ['c' => $cid])); }
+    $d = ['year' => post_int('year'), 'make' => post('make'), 'model' => post('model'), 'engine' => post('engine'), 'vin' => strtoupper(post('vin')), 'trim' => post('trim')];
+    if ($d['vin'] !== '' && $d['make'] === '') { $dec = vin_decode_world($d['vin']); foreach (['year', 'make', 'model', 'engine', 'trim'] as $k) if (!empty($dec[$k])) $d[$k] = $dec[$k]; }
+    $kind = array_key_exists(post('kind'), VEHICLE_KINDS) ? post('kind') : 'car';
+    $nid = insert('vehicle', $d + ['kind' => $kind, 'plate' => post('plate'), 'color' => post('color'), 'mileage' => post_int('miles') ?? 0, 'mileage_updated' => today(), 'notes' => '', 'mods' => '', 'customer_id' => $cid, 'sort' => (int)col('SELECT COALESCE(MAX(sort),0)+1 FROM vehicle')]);
+    seed_vehicle_templates($nid, $kind);
+    flash('Vehicle added to the customer.'); redirect(url('customers', ['c' => $cid]));
+
+case 'tool_save':
+    $tid = post_int('id') ?? 0;
+    if ($tid && !owns_row('tool_links', $tid)) { http_response_code(404); exit('Not found'); }
+    if (!preg_match('~^https://~i', post('url')) || post('name') === '') { flash('Give the tool a name and an https:// address.', 'err'); redirect(url('tools')); }
+    $data = ['grp' => post('grp') ?: 'My tools', 'name' => post('name'), 'url' => post('url'), 'notes' => post('notes')];
+    if ($tid) update('tool_links', $data, $tid); else insert('tool_links', $data + ['user_id' => uid(), 'sort' => (int)col('SELECT COALESCE(MAX(sort),0)+1 FROM tool_links WHERE user_id=?', [uid()])]);
+    flash('Saved.'); redirect(url('tools'));
+
+case 'tool_preset':
+    foreach ((array)($_POST['pick'] ?? []) as $pick) {
+        [$g, $i] = array_pad(explode('|', (string)$pick, 2), 2, '');
+        $p = TOOL_PRESETS[$g][(int)$i] ?? null;
+        if ($p && !col('SELECT 1 FROM tool_links WHERE user_id=? AND url=?', [uid(), $p[1]])) insert('tool_links', ['user_id' => uid(), 'grp' => $g, 'name' => $p[0], 'url' => $p[1], 'notes' => '', 'sort' => 0]);
+    }
+    redirect(url('tools'));
+
+case 'tool_delete':
+    if (owns_row('tool_links', (int)$id)) q('DELETE FROM tool_links WHERE id=?', [$id]);
+    redirect(url('tools'));
 
 case 'recalls_check':
     $n = recalls_refresh(vid(), true);

@@ -53,12 +53,19 @@ foreach ([
     'LIMIT_VEHICLES' => 10,        // per account (multi-user)
     'LIMIT_PHOTOS' => 400,
     'LIMIT_VISION_PER_DAY' => 25,
+    'GUESTS' => true,              // multi-user: "Try it without signing up" (temporary guest garages, deleted after GUEST_DAYS)
+    'GUEST_DAYS' => 7,
+    'YOUTUBE_KEY' => '',           // YouTube Data API v3 key: in-app video search (without it, the Videos tab opens YouTube)
+    'PUBLIC_LOOKUP' => true,       // multi-user: public code lookup page without an account
+    'LIMIT_CUSTOMER_VEHICLES' => 500,
 ] as $k => $v) if (!defined($k)) define($k, $v);
 if (!defined('DATA_DIR')) define('DATA_DIR', APP_ROOT . '/data');
 if (!defined('UPLOAD_DIR')) define('UPLOAD_DIR', APP_ROOT . '/uploads');
 define('UPLOAD_URL', 'uploads');
 require APP_ROOT . '/app/vehicles.php';
 require APP_ROOT . '/app/consumer.php';
+require APP_ROOT . '/app/obd_kb.php';
+require APP_ROOT . '/app/diag.php';
 
 function db(): PDO {
     static $pdo = null;
@@ -77,6 +84,7 @@ function db(): PDO {
     migrate_multi_vehicle($pdo);
     migrate_accounts($pdo);
     migrate_consumer($pdo);
+    migrate_diag($pdo);
     $count = (int)$pdo->query('SELECT COUNT(*) FROM vehicle')->fetchColumn();
     if ($count === 0 && !$pdo->query("SELECT 1 FROM settings WHERE key='seeded'")->fetchColumn()) {
         $pdo->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('seeded', datetime('now'))");
@@ -159,7 +167,7 @@ function owns(string $table, int $id): bool {
     if ($id <= 0) return false;
     return match (true) {
         $table === 'issue_notes' => (bool)col('SELECT 1 FROM issue_notes n JOIN issues i ON i.id=n.issue_id JOIN vehicle v ON v.id=i.vehicle_id WHERE n.id=? AND v.user_id=?', [$id, uid()]),
-        in_array($table, ['mechanics', 'links'], true) => (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]),
+        in_array($table, ['mechanics', 'links', 'customers', 'diag_reports', 'tool_links'], true) => (bool)col("SELECT 1 FROM $table WHERE id=? AND user_id=?", [$id, uid()]),
         in_array($table, SCOPED, true) => (bool)col("SELECT 1 FROM $table t JOIN vehicle v ON v.id=t.vehicle_id WHERE t.id=? AND v.user_id=?", [$id, uid()]),
         default => false,
     };
@@ -262,13 +270,14 @@ function vid(?int $set = null): int {
     if ($cur !== null) return $cur;
     $want = (int)($_GET['v'] ?? ($_SESSION['vid'] ?? 0));
     if ($want > 0 && owns_vehicle($want)) return vid($want);
-    $firstId = (int)col('SELECT id FROM vehicle WHERE user_id=? ORDER BY sort, id LIMIT 1', [uid()]);
+    $firstId = (int)col('SELECT id FROM vehicle WHERE user_id=? ORDER BY customer_id IS NOT NULL, sort, id LIMIT 1', [uid()]);
     return $firstId ? vid($firstId) : 0;
 }
 /** SQL condition for "belongs to the current vehicle", e.g. "WHERE " . vw('i') . " AND ...". */
 function vw(string $alias = ''): string { return ($alias !== '' ? "$alias." : '') . 'vehicle_id=' . vid(); }
 function vehicle(): array { return row('SELECT * FROM vehicle WHERE id=?', [vid()]) ?? []; }
-function vehicles(): array { return rows('SELECT * FROM vehicle WHERE user_id=? ORDER BY sort, id', [uid()]); }
+/** The account's own vehicles (customer vehicles, kept by mechanics, only with $withCustomers). */
+function vehicles(bool $withCustomers = false): array { return rows('SELECT * FROM vehicle WHERE user_id=?' . ($withCustomers ? '' : ' AND customer_id IS NULL') . ' ORDER BY sort, id', [uid()]); }
 function vehicle_name(array $v): string { return trim(($v['year'] ?? '') . ' ' . ($v['make'] ?? '') . ' ' . ($v['model'] ?? '')); }
 const VEHICLE_KINDS = ['car' => 'Car', 'suv' => 'SUV / truck', 'scooter' => 'Scooter / moped', 'motorcycle' => 'Motorcycle'];
 /** Two-wheelers have no OBD-II port and use the simpler checklists. */

@@ -41,3 +41,7 @@ CREATE TABLE IF NOT EXISTS recalls (id INTEGER PRIMARY KEY, vehicle_id INTEGER N
   report_date TEXT, park_it INT DEFAULT 0, status TEXT DEFAULT 'open', found_at TEXT, UNIQUE (vehicle_id, campaign));
 CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY, vehicle_id INTEGER NOT NULL DEFAULT 1, token TEXT UNIQUE, created_at TEXT, revoked INT DEFAULT 0,
   include_issues INT DEFAULT 1, include_costs INT DEFAULT 1, include_vin INT DEFAULT 0, views INT DEFAULT 0, last_view TEXT);
+CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 1, name TEXT, phone TEXT, email TEXT, notes TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS diag_reports (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 1, vehicle_id INT, customer_id INT, vehicle_json TEXT, codes TEXT, freeze TEXT,
+  symptoms TEXT, notes TEXT, source TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS tool_links (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL DEFAULT 1, grp TEXT, name TEXT, url TEXT, notes TEXT, sort INT DEFAULT 0);

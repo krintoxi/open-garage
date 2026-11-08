@@ -53,7 +53,8 @@ $hasPw = (bool)col("SELECT value FROM settings WHERE key='password_hash'");
       </form>
       <?php if ($em): ?><form method="post" class="right" style="margin-top:8px"><input type="hidden" name="action" value="mechanic_delete"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="id" value="<?= $em['id'] ?>"><button class="sm ghost danger" data-confirm="Remove this mechanic?">Remove</button></form><?php endif; ?>
     </div>
-    <?php if (MULTI_USER): $me = current_user(); ?>
+    <?php if (is_guest()): ?><div style="margin-top:18px"><?php require APP_ROOT . '/app/views/_guest_keep.php'; ?></div><?php endif; ?>
+    <?php if (MULTI_USER && !is_guest()): $me = current_user(); ?>
     <div class="card" style="margin-top:18px" id="access">
       <h2>Your account</h2>
       <p class="muted" style="font-size:13.5px">Signed in as <b><?= h($me['email'] ?? '') ?></b><?= empty($me['verified_at']) ? ' (email not confirmed yet)' : '' ?>.</p>

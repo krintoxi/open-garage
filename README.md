@@ -24,6 +24,24 @@ it tells you what to do this week, keeps the history a shop can't argue with, an
 - **One owner or many.** Run it for yourself with one password, or as a hosted service with email sign-up
   (`MULTI_USER`): every account sees only its own vehicles, with password reset by email, per-account limits, sign-up
   throttling and a JSON export of your data.
+- **Diagnose any check-engine code, any car.** Type codes, paste a scan report, or upload a PDF/CSV export or a
+  photo of the scanner screen (read by a local vision model on the optional [garage-vision](vision/) service, and
+  always shown back for confirmation). For each code: plain meaning, "can I drive it?", typical cost and DIY
+  difficulty, ranked causes, try-this-first steps, what to tell the shop, and for mechanics the set criteria and a
+  test plan. Across codes it reasons about combinations (both banks lean, misfire + lean, U-code storms, fix-first
+  order), reads freeze-frame / live data (fuel trims, coolant temp, MAF vs engine size, voltage, "codes cleared
+  recently"), adds well-known failure patterns for specific engines and transmissions, NHTSA recalls and owner
+  complaints for the model, and repair videos. Built-in knowledge covers the SAE generic codes by family
+  (O2 sensors per bank/sensor, misfire per cylinder, VVT, EVAP, transmission solenoids, network U-codes...) and
+  explains any other code by its structure. VINs from any country are identified (NHTSA vPIC plus a worldwide
+  manufacturer/country table).
+- **DIY and Mechanic modes.** Mechanic mode adds customers, their vehicles, saved diagnostic reports per customer,
+  and printable reports. **My tools** keeps the paid services you already use (ALLDATA, ProDemand, Identifix, scan
+  tool clouds, factory service sites) one tap away, each opening in its own window; results come back by upload,
+  paste, or the phone's Share sheet (the installed app is a share target).
+- **Repair videos in the app** (YouTube Data API key in `YOUTUBE_KEY`; without it the Videos tab opens YouTube).
+- **Try it without an account** (hosted mode): guest garages that expire after `GUEST_DAYS` unless kept, and a
+  public code lookup page (`?p=lookup`), both rate-limited.
 - **Health score.** One number (0-100) per vehicle with the reasons behind it: open problems by severity, overdue
   service, recalls to check, active warning codes, a stale weekly check. Each reason links to the fix.
 - **Safety recalls.** Every vehicle is checked against the U.S. NHTSA recall database once a week (free, no key).
@@ -61,6 +79,7 @@ and choose the mode:
 - **A hosted garage for others:** `define('MULTI_USER', true);` plus `BASE_URL`, and `MAIL_KEY` / `MAIL_FROM` (a
   [Resend](https://resend.com) key) for confirmation and password-reset emails. The first account to sign up is the admin.
 - **Showroom photos / 3D:** run [vision/](vision/) on a GPU machine and set `VISION_URL` / `VISION_TOKEN`.
+- **In-app video search:** `define('YOUTUBE_KEY', '...');` (a free YouTube Data API v3 key; results are cached a week).
 - **Reminder emails (hosted mode):** run `php app/tools/send-reminders.php` once a day from cron (`--dry-run` shows
   who would get what). Each account gets at most one email a week, and none when nothing is due.
 
@@ -69,7 +88,8 @@ and choose the mode:
 - Internal PHP files refuse direct requests, and `app/.htaccess` / `uploads/.htaccess` deny them on Apache. On other
   servers, block `/app`, `/data` and `/uploads` too.
 - Outbound requests: `vpic.nhtsa.dot.gov` and `commons.wikimedia.org` when you add a vehicle or look up a VIN, and
-  `api.nhtsa.gov` (year/make/model only, never the VIN) for the weekly recall check.
+  `api.nhtsa.gov` (year/make/model only, never the VIN) for recalls, owner complaints and model names, and
+  `googleapis.com` for video search when a key is set.
 - The OBD-II library covers the standard generic codes; add your own notes and codes from the OBD codes page.
 - 3D: see [assets/models/README.txt](assets/models/README.txt). No 3D model is included.
 - Screenshot credit: the Honda Civic stand-in photo is by MB-one, CC BY-SA 4.0, via Wikimedia Commons.

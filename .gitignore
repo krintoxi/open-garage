@@ -7,3 +7,4 @@ manual/
 .DS_Store
 *.sqlite
 *.sqlite-*
+__pycache__/

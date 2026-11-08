@@ -11,11 +11,14 @@ $events = rows('SELECT e.*, c.title FROM code_events e LEFT JOIN obd_codes c ON 
 $exact = $qs !== '' ? row('SELECT * FROM obd_codes WHERE code=?', [$qs]) : null;
 $total = (int)col('SELECT COUNT(*) FROM obd_codes');
 ?>
-<div class="head"><div><h1>OBD codes</h1><p><?= $total ?> codes in the local library, some with model-specific notes. Anything else: look it up and add it.</p></div></div>
+<div class="head"><div><h1>Code library</h1><p><?= $total ?> codes with your notes, plus <?= count(obd_codes_map()) ?> standard codes in the diagnostic knowledge base. For a full analysis use <a href="<?= url('diagnose') ?>">Diagnose</a>.</p></div></div>
 <div class="grid g3">
   <div style="grid-column:span 2">
     <form method="get" class="search"><input type="hidden" name="p" value="codes"><input type="search" name="q" value="<?= h($qs) ?>" placeholder="Search code or words: P0442, misfire, fan, catalyst…"><select name="sys" style="width:170px"><option value="">All systems</option><?php foreach ($systems as $s): ?><option <?= $sys === $s ? 'selected' : '' ?>><?= h($s) ?></option><?php endforeach; ?></select><button type="submit">Search</button></form>
-    <?php if ($qs !== '' && !$exact && preg_match('/^[PBCU]\d{4}$/', $qs)): ?>
+    <?php if ($qs !== '' && obd_norm($qs)): $KL = obd_lookup($qs, $veh); ?>
+      <a class="callout diag-jump" href="<?= url('diagnose', ['codes' => $KL['code']]) ?>"><b><?= h($KL['code']) ?></b> <?= h($KL['title']) ?><?= $KL['kb'] ? ' · ' . h(OBD_DRIVE[$KL['kb']['drive']][0]) : '' ?> <span style="margin-left:auto">Full diagnosis: causes, fixes, videos →</span></a>
+    <?php endif; ?>
+    <?php if ($qs !== '' && !$exact && preg_match('/^[PBCU]\d{4}$/', $qs) && !obd_lookup($qs)['known']): ?>
       <div class="callout"><b><?= h($qs) ?></b> is not in the local library. <a href="https://www.obd-codes.com/<?= strtolower(h($qs)) ?>" target="_blank" rel="noopener">Look it up on OBD-Codes.com ↗</a> or <a href="https://www.google.com/search?q=<?= urlencode(trim($qs . ' ' . vehicle_name($veh))) ?>" target="_blank" rel="noopener">search with the car ↗</a>, then add it below so it is here next time.</div>
       <details><summary>Add <?= h($qs) ?> to the library</summary><form method="post"><input type="hidden" name="action" value="code_save"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><div class="form-grid"><div><label>Code</label><input type="text" name="code" value="<?= h($qs) ?>"></div><div><label>Title</label><input type="text" name="title" required></div><div><label>System</label><input type="text" name="system" value="Engine"></div><div><label>Severity</label><select name="severity"><?php foreach (SEVERITY as $k => $v): ?><option value="<?= $k ?>"><?= $k ?> · <?= $v ?></option><?php endforeach; ?></select></div><div class="full"><label>Description</label><textarea name="description" style="min-height:60px"></textarea></div><div class="full"><label>Common causes</label><textarea name="causes" style="min-height:60px"></textarea></div><div class="full"><label>Note for this car</label><input type="text" name="c300_note"></div></div><div class="row end" style="margin-top:8px"><button class="primary" type="submit">Save to library</button></div></form></details>
     <?php endif; ?>

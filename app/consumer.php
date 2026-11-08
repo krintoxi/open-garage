@@ -70,7 +70,10 @@ function recall_lookup(array $v): ?array {
     $makes = array_values(array_unique([$make, str_replace('-', ' ', $make), str_replace(' ', '-', $make)]));
     $models = array_values(array_unique(array_filter([$model, preg_replace('/\s+/', '', $model), strtok($model, ' ')])));
     $reached = false;
-    foreach ($makes as $mk) foreach ($models as $md) {
+    $pairs = [];
+    foreach ($makes as $mk) foreach ($models as $md) $pairs[] = [$mk, $md];
+    if (function_exists('nhtsa_models')) $pairs = array_merge($pairs, nhtsa_models($year, $make, $model, 'r'));
+    foreach ($pairs as [$mk, $md]) {
         $b = http_get('https://api.nhtsa.gov/recalls/recallsByVehicle?' . http_build_query(['make' => $mk, 'model' => $md, 'modelYear' => $year]), 6);
         $j = $b ? json_decode($b, true) : null;
         if (!is_array($j)) continue;
@@ -129,7 +132,7 @@ function reminders_available(): bool { return MULTI_USER && MAIL_KEY !== '' && M
 /** What is due across one account's vehicles: [[vehicle name, [lines...]], ...]; empty when nothing needs doing. */
 function reminder_digest(int $userId): array {
     $out = [];
-    foreach (rows('SELECT * FROM vehicle WHERE user_id=? ORDER BY sort, id', [$userId]) as $v) {
+    foreach (rows('SELECT * FROM vehicle WHERE user_id=? AND customer_id IS NULL ORDER BY sort, id', [$userId]) as $v) {
         $vid = (int)$v['id']; $lines = [];
         foreach (rows('SELECT * FROM maintenance WHERE vehicle_id=? ORDER BY priority, item', [$vid]) as $m) {
             [$state, , , $lbl] = maintenance_status($m, (int)$v['mileage']);

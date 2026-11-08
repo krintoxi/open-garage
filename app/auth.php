@@ -5,17 +5,17 @@ if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 
 function mu_sign_in(array $u): void {
     session_regenerate_id(true);
-    unset($_SESSION['csrf'], $_SESSION['vid']);
+    unset($_SESSION['csrf'], $_SESSION['vid'], $_SESSION['mode']);
     $_SESSION['uid'] = (int)$u['id'];
     q('UPDATE users SET last_login=? WHERE id=?', [now(), $u['id']]);
 }
-function mail_verify(array $u): bool {
+if (!function_exists('mail_verify')) { function mail_verify(array $u): bool {
     $tok = bin2hex(random_bytes(20));
     q('UPDATE users SET verify_token=? WHERE id=?', [hash('sha256', $tok), $u['id']]);
     $link = base_url() . '/' . url('verify', ['t' => $tok]);
     return send_mail($u['email'], 'Confirm your ' . APP_NAME . ' account',
         '<p>Welcome to ' . h(APP_NAME) . '.</p><p><a href="' . h($link) . '">Confirm your email</a> so you can reset your password if you ever forget it.</p><p>If you did not sign up, ignore this email.</p>');
-}
+} }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     // ?p=verify&t=<token>
@@ -48,6 +48,17 @@ case 'login':
     }
     login_failed($ip);
     flash(login_locked_for($ip) ? 'Too many wrong passwords. Try again in 15 min.' : 'Wrong email or password.', 'err'); redirect(url('login'));
+
+case 'guest':
+    // "Try it without signing up": a temporary account with no email, deleted after GUEST_DAYS unless kept.
+    if (!GUESTS) redirect(url('login'));
+    if ((int)post('t0') > 0 && time() - (int)post('t0') < 1) redirect(url('login'));
+    if (!rate_ok('guest:' . $ip, 5, 86400)) { flash('Too many guest garages from this network today. Create a free account instead.', 'err'); redirect(url('signup')); }
+    guests_purge();
+    $id = insert('users', ['email' => null, 'pw_hash' => '', 'name' => 'Guest', 'created_at' => now(), 'is_admin' => 0, 'is_guest' => 1, 'guest_expires' => time() + GUEST_DAYS * 86400]);
+    mu_sign_in(row('SELECT * FROM users WHERE id=?', [$id]));
+    flash('You are trying ' . APP_NAME . ' as a guest. Add a vehicle (or diagnose a code) to see how it works. Keep your garage any time by adding an email.');
+    redirect(url('garage') . '#add');
 
 case 'signup':
     if (!SIGNUP_OPEN) { flash('Sign-ups are closed right now.', 'err'); redirect(url('login')); }

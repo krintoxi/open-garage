@@ -250,3 +250,80 @@ document.querySelectorAll('table').forEach(t => {
     b.onclick = async () => { deferred.prompt(); await deferred.userChoice.catch(() => {}); deferred = null; tip.hidden = true; };
   });
 })();
+
+// Diagnosis: per-code tabs (Overview / DIY / Mechanic / Videos) and in-app YouTube results + player.
+(() => {
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const player = () => document.getElementById('ytplayer');
+  const play = id => {
+    const p = player(); if (!p) return;
+    p.querySelector('iframe').src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0';
+    p.hidden = false;
+  };
+  document.addEventListener('click', e => {
+    const p = player();
+    if (p && !p.hidden && (e.target === p || e.target.closest('#ytplayer button'))) { p.hidden = true; p.querySelector('iframe').src = 'about:blank'; }
+    const v = e.target.closest('[data-yt-id]');
+    if (v) { e.preventDefault(); play(v.dataset.ytId); }
+  });
+  document.addEventListener('keydown', e => { const p = player(); if (e.key === 'Escape' && p && !p.hidden) { p.hidden = true; p.querySelector('iframe').src = 'about:blank'; } });
+  async function loadVideos(q, out) {
+    out.innerHTML = '<p class="muted">Loading videos…</p>';
+    try {
+      const r = await fetch('index.php?p=yt&q=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(r => r.json());
+      if (!r.items || !r.items.length) {
+        out.innerHTML = '<p class="muted">' + (r.nokey ? 'In-app video search is not switched on here yet.' : 'No videos found in the app.') + '</p><a class="btn sm" target="_blank" rel="noopener" href="' + esc(r.fallback) + '">Search YouTube for “' + esc(q) + '” ↗</a>';
+        return;
+      }
+      out.innerHTML = r.items.map(v => '<a class="yt" href="https://www.youtube.com/watch?v=' + esc(v.id) + '" data-yt-id="' + esc(v.id) + '"><img loading="lazy" src="' + esc(v.thumb) + '" alt=""><b>' + esc(v.title) + '</b><small>' + esc(v.channel) + '</small></a>').join('')
+        + '<a class="btn sm ghost yt-more" target="_blank" rel="noopener" href="' + esc(r.fallback) + '">More on YouTube ↗</a>';
+    } catch { out.innerHTML = '<a class="btn sm" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(q) + '">Search YouTube ↗</a>'; }
+  }
+  document.querySelectorAll('.dtabs').forEach(tabs => {
+    const card = tabs.closest('.dcode');
+    tabs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      tabs.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      card.querySelectorAll('.dpane').forEach(p => { p.hidden = p.dataset.pane !== b.dataset.dtab; });
+      if (b.dataset.yt && !b.dataset.loaded) { b.dataset.loaded = 1; loadVideos(b.dataset.yt, card.querySelector('[data-yt-out]')); }
+    }));
+  });
+  document.querySelectorAll('[data-yt-search]').forEach(f => f.addEventListener('submit', e => {
+    e.preventDefault(); const q = f.querySelector('[data-yt-q]').value.trim(); if (q) loadVideos(q, f.parentElement.querySelector('[data-yt-out]'));
+  }));
+  document.querySelectorAll('[data-copy-text]').forEach(p => { p.title = 'Tap to copy'; p.addEventListener('click', () => navigator.clipboard?.writeText(p.textContent.trim()).then(() => { p.classList.add('copied'); setTimeout(() => p.classList.remove('copied'), 1400); })); });
+})();
+
+// Diagnose form: "another vehicle" fields, world VIN decode, live code chips, scan file name, busy state.
+(() => {
+  const f = document.querySelector('[data-diag-form]'); if (!f) return;
+  const pick = f.querySelector('[data-veh-pick]'), other = f.querySelector('[data-other-veh]');
+  const sync = () => { other.hidden = pick.value !== '0'; };
+  pick.addEventListener('change', sync); sync();
+  const vin = f.querySelector('[data-dvin]'), out = f.querySelector('[data-dvin-out]');
+  f.querySelector('[data-dvin-go]').addEventListener('click', async () => {
+    out.textContent = 'Looking up…';
+    try {
+      const r = await fetch('index.php?p=vin&vin=' + encodeURIComponent(vin.value.trim()), { credentials: 'same-origin' }).then(r => r.json());
+      ['year', 'make', 'model', 'engine', 'trim', 'country'].forEach(k => { if (r[k] && f.elements[k]) f.elements[k].value = r[k]; });
+      out.textContent = (r.make ? 'Found: ' + [r.year, r.make, r.model, r.engine].filter(Boolean).join(' ') + (r.country ? ' · built in ' + r.country : '') + '. ' : '') + (r.error || '');
+    } catch { out.textContent = 'VIN service not reachable: fill in the vehicle yourself.'; }
+  });
+  const ta = f.querySelector('[data-codes-in]'), chips = f.querySelector('[data-code-chips]');
+  const draw = () => {
+    const m = [...new Set((ta.value.toUpperCase().match(/(?<![A-Z0-9])[PBCU][0-3][0-9A-F]{3}(?![0-9A-Z])/g) || []))];
+    chips.innerHTML = m.map(c => '<span class="code">' + c + '</span>').join(' ') + (m.length ? ' <small class="muted">' + m.length + ' code' + (m.length > 1 ? 's' : '') + ' found</small>' : '');
+  };
+  ta.addEventListener('input', draw); draw();
+  const file = f.querySelector('[data-scan-file]');
+  file.addEventListener('change', () => { const n = file.files[0]?.name; if (n) f.querySelector('.snap-sm .snap-empty b').textContent = '📄 ' + n + ' (ready)'; });
+  f.addEventListener('submit', () => { const b = f.querySelector('[data-diag-go]'); b.disabled = true; b.textContent = file.files.length ? 'Reading the scan…' : 'Analyzing…'; });
+})();
+
+// My tools: open each subscription in its own named window, side by side with the app.
+(() => {
+  document.querySelectorAll('[data-tool-url]').forEach(b => b.addEventListener('click', () => {
+    const w = Math.min(1200, Math.round(screen.availWidth * 0.6)), h = Math.round(screen.availHeight * 0.9);
+    const win = window.open(b.dataset.toolUrl, 'tool' + b.dataset.toolId, `popup,width=${w},height=${h},left=${screen.availWidth - w},top=0`);
+    if (win) { try { win.opener = null; } catch {} } else location.href = b.dataset.toolUrl;
+  }));
+})();
