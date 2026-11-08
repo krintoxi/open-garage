@@ -541,3 +541,14 @@ document.querySelectorAll('table').forEach(t => {
 
 // First-run chooser: "My own vehicles" just tucks the chooser away and goes to the add-vehicle form.
 document.querySelectorAll('[data-chooser-own]').forEach(a => a.addEventListener('click', () => { const c = a.closest('.chooser'); if (c) c.hidden = true; }));
+
+// Shop board on phones: the column tabs switch the visible column without reloading.
+document.querySelectorAll('[data-board]').forEach(board => {
+  const tabs = board.parentElement.querySelectorAll('[data-tab]');
+  const sel = board.parentElement.querySelector('[data-tab][aria-selected=true]'); if (sel) sel.parentElement.scrollLeft = sel.offsetLeft - sel.parentElement.offsetLeft - 16;
+  tabs.forEach(t => t.addEventListener('click', e => {
+    e.preventDefault(); board.dataset.show = t.dataset.tab;
+    tabs.forEach(x => x.setAttribute('aria-selected', x === t ? 'true' : 'false'));
+    try { history.replaceState(null, '', t.href); } catch (_) {}
+  }));
+});
