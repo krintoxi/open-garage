@@ -1,7 +1,7 @@
 // Service worker: makes the app installable and gives it an offline screen.
 // Only static files (styles, scripts, icons) are cached. Pages with your records are never stored on the device.
-const CACHE = 'garage-shell-v4';
-const SHELL = ['offline.html', 'assets/app.css?v=16', 'assets/app.js?v=9', 'assets/favicon.png', 'assets/icon-512.png', 'assets/apple-touch-icon.png'];
+const CACHE = 'garage-shell-v5';
+const SHELL = ['offline.html', 'assets/app.css?v=17', 'assets/app.js?v=10', 'assets/favicon.png', 'assets/icon-512.png', 'assets/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

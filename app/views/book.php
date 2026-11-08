@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $fmt = fn(string $t) => date('g:i a', strtotime("2000-01-01 $t"));
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
-<title>Book with <?= h($S['name'] ?: APP_NAME) ?></title><link rel="stylesheet" href="assets/doc.css?v=3"></head><body>
+<title>Book with <?= h($S['name'] ?: APP_NAME) ?></title><link rel="stylesheet" href="assets/doc.css?v=4"></head><body>
 <div class="page book">
   <header class="doc-head"><div><b class="shop-name"><?= h($S['name'] ?: 'Book a service') ?></b><p class="mut" style="margin:4px 0 0"><?= h(implode(' · ', array_filter([$S['address'], $S['phone']]))) ?></p></div>
     <div class="doc-id"><b>Book online</b><small><?= h(implode(', ', array_map(fn($d, $hh) => WEEKDAYS[$d] . ' ' . date('g', strtotime($hh[0])) . '–' . date('ga', strtotime($hh[1])), array_keys(array_filter(shop_hours($S))), array_filter(shop_hours($S))))) ?></small></div></header>
@@ -66,4 +66,4 @@ $fmt = fn(string $t) => date('g:i a', strtotime("2000-01-01 $t"));
   </form>
   <?php endif; ?>
 </div>
-<script src="assets/app.js?v=9"></script></body></html>
+<script src="assets/app.js?v=10"></script></body></html>

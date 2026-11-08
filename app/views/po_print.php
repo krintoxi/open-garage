@@ -8,7 +8,7 @@ $V = $po['vendor_id'] ? row('SELECT * FROM vendors WHERE id=?', [$po['vendor_id'
 $lines = rows('SELECT * FROM po_lines WHERE po_id=? ORDER BY id', [$pid]);
 $S = shop();
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
-<title>Purchase order <?= h($po['po_no']) ?></title><link rel="stylesheet" href="assets/doc.css?v=3"></head><body>
+<title>Purchase order <?= h($po['po_no']) ?></title><link rel="stylesheet" href="assets/doc.css?v=4"></head><body>
 <div class="bar"><a href="<?= url('po', ['id' => $pid]) ?>">← Back</a><button type="button" class="primary" onclick="print()">Print / save as PDF</button></div>
 <div class="page">
   <header class="doc-head"><div><b class="shop-name"><?= h($S['name'] ?: APP_NAME) ?></b><p><?= nl2br(h(implode("\n", array_filter([$S['address'], $S['phone'], $S['email']])))) ?></p></div>

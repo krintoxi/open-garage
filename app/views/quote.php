@@ -47,7 +47,7 @@ $doc = in_array($job['stage'], ['invoiced', 'paid'], true) ? 'invoice' : 'estima
 $insp = rows('SELECT * FROM job_inspect WHERE job_id=? ORDER BY sort', [$job['id']]);
 $interactive = $pending && $doc === 'estimate';
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
-<title><?= h(($S['name'] ?: APP_NAME) . ' · ' . ($doc === 'invoice' ? 'Invoice ' . ($job['inv_no'] ?: $job['est_no']) : 'Estimate ' . $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=3"></head><body>
+<title><?= h(($S['name'] ?: APP_NAME) . ' · ' . ($doc === 'invoice' ? 'Invoice ' . ($job['inv_no'] ?: $job['est_no']) : 'Estimate ' . $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=4"></head><body>
 <div class="bar"><button type="button" onclick="print()">Print / save as PDF</button></div>
 <div class="page">
   <?php if ($done === 'yes'): ?><div class="notice">Thank you, <?= h((string)$job['approved_by']) ?>. Your approval was sent to <?= h($S['name'] ?: 'the shop') ?>.</div>

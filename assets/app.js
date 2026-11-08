@@ -384,8 +384,9 @@ document.querySelectorAll('table').forEach(t => {
 })();
 
 
-// Scan the VIN or plate: photo from the phone camera. Door-frame barcodes (Code 39 / Data Matrix / QR) are decoded on the
-// phone; anything else (printed VIN, windshield plate, registration, licence plate) goes to the server's photo reader.
+// Scan the VIN or plate. With camera access: a live viewfinder that reads door-frame barcodes (Code 39 / 128, Data
+// Matrix, QR) by itself, plus "Take photo" for printed VINs and plates (read by the server's photo reader). Without it
+// (older phones, desktop): the phone's camera app / a photo file, same reading.
 (() => {
   const widgets = document.querySelectorAll('[data-idscan]'); if (!widgets.length) return;
   const vinOf = t => { const m = String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^I(?=[A-HJ-NPR-Z0-9]{17}$)/, '').match(/[A-HJ-NPR-Z0-9]{17}/); return m ? m[0] : ''; };
@@ -394,32 +395,45 @@ document.querySelectorAll('table').forEach(t => {
     const sc = document.createElement('script');
     sc.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
     sc.integrity = 'sha384-BzBxP10ZE72aitqj5UMmUsbKFliP/DZqA8Wq+BNNhlIJDGoEd1tpkMYXOg9+n6sB'; sc.crossOrigin = 'anonymous';
-    sc.onload = () => window.ZXing ? ok(window.ZXing) : no(); sc.onerror = no; document.head.appendChild(sc);
+    sc.onload = () => window.ZXing ? ok(window.ZXing) : no(); sc.onerror = () => { zx = null; no(); }; document.head.appendChild(sc);
   }));
+  const FORMATS = ['code_39', 'code_128', 'data_matrix', 'qr_code', 'pdf417'];
+  let detector;
+  const getDetector = async () => {
+    if (detector !== undefined) return detector;
+    try { if ('BarcodeDetector' in window) { const sup = await BarcodeDetector.getSupportedFormats(); const f = FORMATS.filter(x => sup.includes(x)); detector = f.length ? new BarcodeDetector({ formats: f }) : null; } else detector = null; }
+    catch (e) { detector = null; }
+    return detector;
+  };
+  let zxReader = null;
+  const zxDecodeCanvas = async canvas => {
+    const Z = await loadZXing();
+    if (!zxReader) {
+      const hints = new Map();
+      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.DATA_MATRIX, Z.BarcodeFormat.QR_CODE, Z.BarcodeFormat.PDF_417]);
+      hints.set(Z.DecodeHintType.TRY_HARDER, true);
+      zxReader = new Z.MultiFormatReader(); zxReader.setHints(hints);
+    }
+    try { return zxReader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(canvas)))).getText(); }
+    catch (e) { return ''; }
+  };
+  /** Any barcode VIN in an image, video frame or canvas source. */
+  const findVin = async (src, w, h) => {
+    const d = await getDetector();
+    if (d) { try { for (const x of await d.detect(src)) { const v = vinOf(x.rawValue); if (v) return v; } } catch (e) {} }
+    try {
+      const k = Math.min(1, 1280 / Math.max(w, h)), c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      return vinOf(await zxDecodeCanvas(c));
+    } catch (e) { return ''; }
+  };
   const shrink = (file, max) => new Promise(ok => {
     const img = new Image(), u = URL.createObjectURL(file);
     img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => ok({ blob: b || file, url: c.toDataURL('image/jpeg', .9) }), 'image/jpeg', .88); };
-    img.onerror = () => { URL.revokeObjectURL(u); ok({ blob: file, url: '' }); };
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => ok({ blob: b || file, img }), 'image/jpeg', .88); };
+    img.onerror = () => { URL.revokeObjectURL(u); ok({ blob: file, img: null }); };
     img.src = u;
   });
-  async function barcode(file, small) {
-    try {
-      if ('BarcodeDetector' in window) {
-        const sup = await BarcodeDetector.getSupportedFormats();
-        const want = ['code_39', 'code_128', 'data_matrix', 'qr_code', 'pdf417'].filter(f => sup.includes(f));
-        if (want.length) { const res = await new BarcodeDetector({ formats: want }).detect(await createImageBitmap(file)); for (const x of res) { const v = vinOf(x.rawValue); if (v) return v; } }
-      }
-    } catch (e) {}
-    try {
-      if (!small.url) return '';
-      const Z = await loadZXing(), hints = new Map();
-      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.DATA_MATRIX, Z.BarcodeFormat.QR_CODE, Z.BarcodeFormat.PDF_417]);
-      hints.set(Z.DecodeHintType.TRY_HARDER, true);
-      const r = await new Z.BrowserMultiFormatReader(hints).decodeFromImageUrl(small.url);
-      return vinOf(r.getText());
-    } catch (e) { return ''; }
-  }
   const fill = (form, r) => {
     if (!form || form.dataset.idscanCustom) return;
     const set = (n, v) => { const el = form.elements[n]; if (el && v !== undefined && v !== null && v !== '' && !(el instanceof RadioNodeList)) el.value = v; };
@@ -428,26 +442,80 @@ document.querySelectorAll('table').forEach(t => {
     const vt = [r.year, r.make, r.model].filter(Boolean).join(' '); if (vt) set('vehicle_text', vt + (r.trim ? ' ' + r.trim : ''));
     if (r.kind && form.elements.kind) { const k = form.querySelector(`[name=kind][value="${r.kind}"]`); if (k) k.checked = true; else if (form.elements.kind.tagName === 'SELECT') form.elements.kind.value = r.kind; }
   };
-  widgets.forEach(w => w.querySelectorAll('[data-idscan-file]').forEach(inp => inp.addEventListener('change', async () => {
-    const file = inp.files[0]; if (!file) return;
-    const kind = inp.dataset.idscanFile, out = w.querySelector('[data-idscan-out]'), form = w.closest('form');
+  /** Send a barcode VIN or a photo to the server, then fill the form and tell the page. */
+  async function submit(w, kind, code, blob) {
+    const out = w.querySelector('[data-idscan-out]'), form = w.closest('form');
     const say = (t, cls) => { out.className = 'idscan-out ' + (cls || 'muted'); out.textContent = t; };
-    w.classList.add('busy'); say(kind === 'vin' ? 'Looking for the VIN barcode…' : 'Reading the plate…');
+    w.classList.add('busy');
+    say(code ? 'Got it, looking up the VIN…' : (kind === 'vin' ? 'Reading the VIN from the photo (about 15 seconds)…' : 'Reading the plate (about 15 seconds)…'));
     try {
-      const small = await shrink(file, 1800);
       const fd = new FormData(); fd.append('_csrf', w.dataset.csrf); fd.append('kind', kind); if (w.dataset.book) fd.append('book', w.dataset.book);
-      const code = kind === 'vin' ? await barcode(file, small) : '';
-      if (code) fd.append('barcode', code); else { say(kind === 'vin' ? 'Reading the VIN from the photo (about 15 seconds)…' : 'Reading the plate (about 15 seconds)…'); fd.append('photo', small.blob, 'scan.jpg'); }
+      if (code) fd.append('barcode', code); else fd.append('photo', blob, 'scan.jpg');
       const r = await fetch('index.php?p=scan_id', { method: 'POST', body: fd, credentials: 'same-origin' }).then(x => x.json());
       if (r.error && !r.vin && !r.plate) { say(r.error, 'err'); return; }
       fill(form, r);
       const veh = [r.year, r.make, r.model, r.trim].filter(Boolean).join(' ');
-      say((r.vin ? (veh ? 'Found: ' + veh + ' · ' : 'VIN ') + r.vin + (r.via === 'barcode' ? ' (barcode)' : '') : '') + (r.plate ? (r.vin ? ' · ' : '') + 'Plate ' + r.plate + (r.state ? ' (' + r.state + ')' : r.region ? ' (' + r.region + ')' : '') : '')
+      say('✓ ' + (r.vin ? (veh ? veh + ' · ' : 'VIN ') + r.vin : '') + (r.plate ? (r.vin ? ' · ' : '') + 'Plate ' + r.plate + (r.state ? ' (' + r.state + ')' : r.region ? ' (' + r.region + ')' : '') : '')
         + (r.vin && r.checked === false ? '. Check the VIN against the sticker: one character may be misread.' : '') + (r.hint ? ' ' + r.hint : '') + (r.error && r.vin ? ' ' + r.error : ''), 'ok');
       w.dispatchEvent(new CustomEvent('idscan', { detail: r, bubbles: true }));
     } catch (e) { say('Could not read it right now. Type it in instead.', 'err'); }
-    finally { w.classList.remove('busy'); inp.value = ''; }
-  })));
+    finally { w.classList.remove('busy'); }
+  }
+  /** A photo from the camera app or a file: try the barcode on the phone first, else send the photo. */
+  async function fromFile(w, kind, file) {
+    const out = w.querySelector('[data-idscan-out]'); out.className = 'idscan-out muted'; out.textContent = kind === 'vin' ? 'Looking for the VIN barcode…' : 'Reading the plate…';
+    const small = await shrink(file, 1800);
+    const code = kind === 'vin' && small.img ? await findVin(small.img, small.img.naturalWidth, small.img.naturalHeight) : '';
+    return submit(w, kind, code, small.blob);
+  }
+
+  // The live viewfinder (one dialog for the page).
+  let dlg, stream, timer, busy;
+  const stop = () => { clearInterval(timer); timer = null; if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; };
+  function viewfinder() {
+    if (dlg) return dlg;
+    dlg = document.createElement('dialog'); dlg.className = 'sheet cam-dlg';
+    dlg.innerHTML = '<div class="cam-wrap"><video playsinline muted autoplay></video><div class="cam-frame"><i></i></div><div class="cam-flash"></div></div>'
+      + '<p class="cam-tip"></p><div class="cam-btns"><button type="button" class="primary" data-cam-snap>📸 Take photo</button><button type="button" data-cam-file>Use the camera app</button><button type="button" class="ghost" data-cam-close>Cancel</button></div>';
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', stop);
+    dlg.querySelector('[data-cam-close]').addEventListener('click', () => dlg.close());
+    return dlg;
+  }
+  async function live(w, kind, fileInput) {
+    const d = viewfinder(), v = d.querySelector('video'), tip = d.querySelector('.cam-tip');
+    d.dataset.kind = kind;
+    tip.textContent = kind === 'vin' ? 'Point at the barcode on the door-frame sticker. It scans by itself. For a printed VIN, hold steady and tap Take photo.' : 'Fit the whole plate in the frame, then tap Take photo.';
+    d.querySelector('[data-cam-file]').onclick = () => { d.close(); fileInput.click(); };
+    d.querySelector('[data-cam-snap]').onclick = () => {
+      if (!v.videoWidth) return;
+      const c = document.createElement('canvas'), k = Math.min(1, 1800 / Math.max(v.videoWidth, v.videoHeight)); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      d.querySelector('.cam-flash').classList.add('on'); setTimeout(() => d.querySelector('.cam-flash').classList.remove('on'), 250);
+      c.toBlob(async b => { const code = kind === 'vin' ? await findVin(c, c.width, c.height) : ''; d.close(); submit(w, kind, code, b); }, 'image/jpeg', .9);
+    };
+    d.showModal();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+      v.srcObject = stream; await v.play().catch(() => {});
+      try { const t = stream.getVideoTracks()[0], cap = t.getCapabilities ? t.getCapabilities() : {}; if (cap.focusMode && cap.focusMode.includes('continuous')) await t.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+    } catch (e) { d.close(); fileInput.click(); return; }   // no permission / no camera: the camera app instead
+    if (kind !== 'vin') return;
+    if (!(await getDetector())) loadZXing().catch(() => {});
+    timer = setInterval(async () => {
+      if (busy || !v.videoWidth || !d.open) return;
+      busy = true;
+      const code = await findVin(v, v.videoWidth, v.videoHeight);
+      busy = false;
+      if (code && d.open) { if (navigator.vibrate) navigator.vibrate(60); d.querySelector('.cam-frame').classList.add('hit'); setTimeout(() => { d.querySelector('.cam-frame').classList.remove('hit'); d.close(); submit(w, kind, code, null); }, 250); }
+    }, 350);
+  }
+  const canLive = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext);
+  widgets.forEach(w => w.querySelectorAll('[data-idscan-file]').forEach(inp => {
+    const kind = inp.dataset.idscanFile, lbl = inp.closest('label');
+    inp.addEventListener('change', () => { const f = inp.files[0]; if (f) fromFile(w, kind, f).finally(() => { inp.value = ''; }); });
+    if (canLive && lbl) lbl.addEventListener('click', e => { if (e.target === inp) return; e.preventDefault(); live(w, kind, inp); });
+  }));
 })();
 
 // Time clock: pick a job+service, live timers, gentle auto-refresh; calendar sheet open/prefill.

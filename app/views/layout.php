@@ -61,7 +61,7 @@ $f = flash();
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css?v=16">
+<link rel="stylesheet" href="assets/app.css?v=17">
 <?php if ($use3d || !empty($useStage)): ?>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <?php endif; ?>
@@ -175,7 +175,7 @@ $f = flash();
 </dialog>
 <?php endif; ?>
 <div id="lightbox" class="lightbox" hidden><img alt=""><button type="button" aria-label="Close">×</button></div>
-<script src="assets/app.js?v=9"></script>
+<script src="assets/app.js?v=10"></script>
 <?php if ($use3d): ?><script type="module" src="assets/car3d.js?v=9"></script><?php endif; ?>
 <?php if (!empty($useStage)): ?><script type="module" src="assets/showroom.js?v=4"></script><?php endif; ?>
 </body>
