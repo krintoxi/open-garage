@@ -34,7 +34,7 @@ switch ($action) {
 case 'logout':
     $_SESSION = [];
     session_regenerate_id(true);
-    flash('Signed out.'); redirect(url('login'));
+    flash('You\'re signed out. See you soon!'); redirect(url('login'));
 
 case 'login':
     if ($wait = login_locked_for($ip)) { flash('Too many wrong passwords. Try again in ' . max(1, (int)ceil($wait / 60)) . ' min.', 'err'); redirect(url('login')); }
@@ -47,7 +47,7 @@ case 'login':
         mu_sign_in($u); redirect(url('dashboard'));
     }
     login_failed($ip);
-    flash(login_locked_for($ip) ? 'Too many wrong passwords. Try again in 15 min.' : 'Wrong email or password.', 'err'); redirect(url('login'));
+    flash(login_locked_for($ip) ? 'Too many wrong passwords. Try again in 15 min.' : 'That email and password don\'t match. Try again, or reset your password.', 'err'); redirect(url('login'));
 
 case 'guest':
     // "Try it without signing up": a temporary account with no email, deleted after GUEST_DAYS unless kept.
@@ -57,7 +57,7 @@ case 'guest':
     guests_purge();
     $id = insert('users', ['email' => null, 'pw_hash' => '', 'name' => 'Guest', 'created_at' => now(), 'is_admin' => 0, 'is_guest' => 1, 'guest_expires' => time() + GUEST_DAYS * 86400]);
     mu_sign_in(row('SELECT * FROM users WHERE id=?', [$id]));
-    flash('You are trying ' . APP_NAME . ' as a guest. Add a vehicle (or diagnose a code) to see how it works. Keep your garage any time by adding an email.');
+    flash('Welcome! This garage is all yours to try. Nothing to sign up for. Start by adding a vehicle below.');
     redirect(url('garage') . '#add');
 
 case 'signup':
@@ -75,7 +75,7 @@ case 'signup':
     $u = row('SELECT * FROM users WHERE id=?', [$id]);
     mu_sign_in($u);
     $sent = mail_verify($u);
-    flash('Welcome! Let\'s add your first vehicle.' . ($sent ? ' We also sent you an email to confirm your address.' : ''));
+    flash('You\'re in! 🎉' . ($sent ? ' We sent you an email to confirm your address (no rush).' : ''));
     redirect(url('garage') . '#add');
 
 case 'forgot':

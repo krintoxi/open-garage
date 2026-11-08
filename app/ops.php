@@ -13,7 +13,7 @@ const TECH_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#14
 
 const OPS_ACTIONS = ['appt_save', 'appt_status', 'appt_checkin', 'appt_remind', 'appt_delete', 'booking_save', 'tech_save', 'tech_delete', 'clock_punch', 'time_save', 'time_add', 'time_delete',
     'line_tech', 'vendor_save', 'vendor_delete', 'po_new', 'po_line_add', 'po_line_save', 'po_line_delete', 'po_status', 'po_receive', 'po_delete', 'parts_paste', 'pay_save', 'pay_link',
-    'admin_toggle', 'admin_delete', 'admin_signups', 'admin_purge_guests'];
+    'admin_toggle', 'admin_delete', 'admin_signups', 'admin_purge_guests', 'setup_hide'];
 
 function migrate_ops(PDO $pdo): void {
     $cols = fn(string $t) => array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
@@ -368,10 +368,23 @@ function admin_users(string $qq = ''): array {
  * phone, anything else goes to the photo reader. Results fill the form's vin/year/make/model/engine/trim/plate/state
  * fields (and vehicle_text), so typing is only the fallback.
  */
-function idscan_widget(string $bookToken = '', bool $plate = true): string {
+function idscan_widget(string $bookToken = '', bool $plate = true, bool $hint = true): string {
     return '<div class="idscan" data-idscan data-csrf="' . h(csrf()) . '"' . ($bookToken !== '' ? ' data-book="' . h($bookToken) . '"' : '') . '>'
         . '<label class="btn primary idscan-btn"><input type="file" accept="image/*" capture="environment" data-idscan-file="vin" hidden>📷 Scan the VIN</label>'
         . ($plate ? '<label class="btn idscan-btn"><input type="file" accept="image/*" capture="environment" data-idscan-file="plate" hidden>🔢 Scan the plate</label>' : '')
-        . '<small class="idscan-hint muted">Snap the sticker on the driver\'s door frame, the VIN plate at the bottom of the windshield, or the registration card.</small>'
+        . ($hint ? '<small class="idscan-hint muted">Snap the sticker on the driver\'s door frame, the VIN plate at the bottom of the windshield, or the registration card.</small>' : '')
         . '<div class="idscan-out" data-idscan-out aria-live="polite"></div></div>';
+}
+
+/** "Get your shop ready" steps for a new shop account: [label, done, link, optional]. */
+function shop_setup_steps(): array {
+    $S = shop();
+    return [
+        ['Your shop name, phone and labor rate', $S['name'] !== '', url('shop'), false],
+        ['Add your team (even if it\'s just you)', (bool)col('SELECT 1 FROM techs WHERE user_id=?', [uid()]), url('team') . '#tform', false],
+        ['Opening hours and online booking', (bool)$S['book_on'], url('shop') . '#booking', false],
+        ['Add your first customer', (bool)col('SELECT 1 FROM customers WHERE user_id=?', [uid()]), url('customers', ['c' => 'new']) . '#cform', false],
+        ['Write your first estimate', (bool)col('SELECT 1 FROM jobs WHERE user_id=?', [uid()]), url('jobs', ['new' => 1]), false],
+        ['Take card payments', stripe_on($S), url('shop') . '#cards', true],
+    ];
 }

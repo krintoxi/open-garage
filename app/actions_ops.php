@@ -264,6 +264,10 @@ case 'pay_link':
     if (!col('SELECT token FROM jobs WHERE id=?', [$id])) q('UPDATE jobs SET token=? WHERE id=?', [bin2hex(random_bytes(16)), $id]);
     redirect(url('job', ['id' => $id]) . '#pay');
 
+case 'setup_hide':
+    shop_save(['setup_hidden' => 1]);
+    flash('Got it. You can find everything under Shop settings.'); redirect(url('jobs'));
+
 /* ---------- Site admin ---------- */
 
 case 'admin_toggle':

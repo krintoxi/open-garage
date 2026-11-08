@@ -12,8 +12,21 @@ foreach ($list as $gv) {
     ];
 }
 ?>
-<div class="head"><div><h1>Garage</h1><p><?= $list ? 'Every vehicle you look after. Tap one to work on it.' : 'Welcome. Add your first vehicle below to get started.' ?></p></div><a class="btn primary" href="#add">+ Add a vehicle</a></div>
-<?php require APP_ROOT . '/app/views/_guest_keep.php'; ?>
+<?php $firstRun = !$list && !is_pro() && !(int)col('SELECT COUNT(*) FROM customers WHERE user_id=?', [uid()]); $me = current_user(); ?>
+<?php if ($list): ?><div class="head"><div><h1>Garage</h1><p>Every vehicle you look after. Tap one to work on it.</p></div><a class="btn primary" href="#add">+ Add a vehicle</a></div>
+<?php else: ?><div class="head welcome"><div><h1>Welcome<?= !empty($me['name']) && !is_guest() ? ', ' . h(strtok((string)$me['name'], ' ')) : '' ?>! 👋</h1><p>Let's add your first vehicle. It takes about a minute.</p></div></div><?php endif; ?>
+<?php if ($firstRun): ?>
+<div class="card chooser">
+  <h2>What brings you here?</h2>
+  <div class="chooser-opts">
+    <a href="#add" class="chooser-opt" data-chooser-own><span>🚗</span><b>My own vehicles</b><small>Keep track of what's wrong, what's due and what the shop did.</small></a>
+    <form method="post"><input type="hidden" name="action" value="mode_set"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="back" value="<?= url('jobs') ?>">
+      <button name="mode" value="pro" class="chooser-opt"><span>🔧</span><b>I fix vehicles for customers</b><small>Estimates, repair orders, appointments, time clock and invoices.</small></button></form>
+  </div>
+  <p class="muted" style="font-size:12.5px;margin:10px 0 0">You can switch any time from the menu.</p>
+</div>
+<?php endif; ?>
+<?php if ($list || (int)col('SELECT COUNT(*) FROM diag_reports WHERE user_id=?', [uid()])) require APP_ROOT . '/app/views/_guest_keep.php'; ?>
 <?php if (is_pro()): $nc = (int)col('SELECT COUNT(*) FROM customers WHERE user_id=?', [uid()]); ?><div class="callout" style="margin-bottom:14px">Mechanic mode: these are your own vehicles. Customer vehicles live under <a href="<?= url('customers') ?>">Customers</a> (<?= $nc ?>).</div><?php endif; ?>
 <div class="garage-grid">
   <?php foreach ($list as $gv): $id = (int)$gv['id']; $st = $stats[$id]; $kind = $gv['kind'] ?: 'car'; ?>
@@ -38,7 +51,7 @@ foreach ($list as $gv) {
 
 <?php $qAll = quick_issue_templates('car') + quick_issue_templates('scooter'); $carOnly = array_diff_key(quick_issue_templates('car'), quick_issue_templates('scooter')); ?>
 <div class="card wizard" id="add">
-  <h2><?= $list ? 'Add a vehicle' : 'Add your first vehicle' ?></h2>
+  <h2><?= $list ? 'Add a vehicle' : 'Your first vehicle' ?></h2>
   <ol class="wz-steps"><li class="on" data-dot="1">What you drive</li><li data-dot="2">Photo</li><li data-dot="3">What's going on</li></ol>
   <form method="post" enctype="multipart/form-data" data-vehicle-add>
     <input type="hidden" name="action" value="vehicle_add"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
@@ -48,8 +61,10 @@ foreach ($list as $gv) {
       <div class="kind-pick"><?php foreach (VEHICLE_KINDS as $k => $l): ?><label><input type="radio" name="kind" value="<?= $k ?>" <?= $k === 'car' ? 'checked' : '' ?>><span><?= ['car' => '🚗', 'suv' => '🛻', 'scooter' => '🛵', 'motorcycle' => '🏍️'][$k] ?> <?= h($l) ?></span></label><?php endforeach; ?></div>
       <div class="wz-tabs"><button type="button" class="on" data-tab="scan">📷 Scan it</button><button type="button" data-tab="vin">Type the VIN</button><button type="button" data-tab="pick">Pick from a list</button></div>
       <div data-pane="scan">
-        <p class="muted" style="margin-top:0">Fastest: take a photo of the VIN sticker on the driver's door frame (or the VIN plate at the bottom of the windshield, or your registration card). We read it and fill in everything. A licence plate photo works too.</p>
-        <?= idscan_widget() ?>
+        <p style="margin-top:0">The quickest way: take a photo of your VIN and we'll fill in the year, make, model and engine for you.</p>
+        <div class="vin-where"><span><b>🚪</b>Driver's door frame</span><span><b>🪟</b>Bottom of the windshield</span><span><b>📄</b>Registration or insurance card</span></div>
+        <?= idscan_widget('', true, false) ?>
+        <p class="muted" style="font-size:12.5px;margin:0">No VIN handy? Use <b>Pick from a list</b> above instead.</p>
       </div>
       <div data-pane="pick" hidden>
         <div class="form-grid">

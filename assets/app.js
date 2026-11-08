@@ -470,3 +470,6 @@ document.querySelectorAll('table').forEach(t => {
   document.querySelectorAll('dialog[data-open-now]').forEach(d => d.showModal && d.showModal());
   document.querySelectorAll('[data-appt-date]').forEach(b => b.addEventListener('click', () => { const d = document.querySelector('#sheet-appt [name=date]'); if (d) d.value = b.dataset.apptDate; }));
 })();
+
+// First-run chooser: "My own vehicles" just tucks the chooser away and goes to the add-vehicle form.
+document.querySelectorAll('[data-chooser-own]').forEach(a => a.addEventListener('click', () => { const c = a.closest('.chooser'); if (c) c.hidden = true; }));

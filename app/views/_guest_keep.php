@@ -3,8 +3,8 @@ if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 if (!is_guest()) return;
 $gu = current_user(); ?>
 <div class="card guest-keep" id="keep">
-  <h2>Keep your garage</h2>
-  <p class="muted">You are using a guest garage. It is deleted on <b><?= h(date('M j, Y', (int)$gu['guest_expires'])) ?></b> unless you keep it. Add an email and password: everything you entered stays. Free.</p>
+  <h2>Like it? Keep it 💾</h2>
+  <p class="muted">This is a guest garage, so it disappears on <b><?= h(date('M j', (int)$gu['guest_expires'])) ?></b>. Add an email and a password and everything you've entered stays. Free, of course.</p>
   <form method="post"><input type="hidden" name="action" value="guest_keep"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
     <div class="form-grid"><div><label>Email</label><input type="email" name="email" required autocomplete="email"></div><div><label>Password (8+ characters)</label><input type="password" name="password" minlength="8" required autocomplete="new-password"></div>
       <div class="full"><label>Your name (optional)</label><input type="text" name="name" maxlength="60"></div></div>

@@ -27,7 +27,7 @@ case 'logout':
     // Throw the whole session away and continue on a fresh id, so the old id and CSRF token are dead.
     $_SESSION = [];
     session_regenerate_id(true);
-    flash('Signed out.');
+    flash('You\'re signed out. See you soon!');
     redirect(url('login'));
 
 case 'account_password':

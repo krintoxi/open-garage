@@ -61,14 +61,14 @@ $f = flash();
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css?v=15">
+<link rel="stylesheet" href="assets/app.css?v=16">
 <?php if ($use3d || !empty($useStage)): ?>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <?php endif; ?>
 </head>
 <?php $ul = upload_limits(); ?>
 <body class="<?= $hasVeh ? 'has-tabbar' : '' ?>" data-max-files="<?= $ul['files'] ?>" data-max-file-bytes="<?= $ul['file_bytes'] ?>" data-max-total-bytes="<?= $ul['total_bytes'] ?>">
-<?php if (is_guest()): $gu = current_user(); ?><div class="guest-bar">Guest garage: kept until <?= h(date('M j', (int)$gu['guest_expires'])) ?>. <a href="<?= url('garage') ?>#keep"><b>Keep it free →</b></a></div><?php endif; ?>
+<?php if (is_guest()): $gu = current_user(); ?><div class="guest-bar"><?php if ($allVehicles): ?>You're trying it as a guest (kept until <?= h(date('M j', (int)$gu['guest_expires'])) ?>). <a href="<?= url('garage') ?>#keep"><b>Keep it free →</b></a><?php else: ?>👋 You're trying it as a guest. Have a look around: nothing you do here is public.<?php endif; ?></div><?php endif; ?>
 <div class="shell">
   <aside class="side">
     <a class="brand" href="<?= url('dashboard') ?>">
@@ -104,7 +104,7 @@ $f = flash();
         <button type="submit" title="Update mileage">↑</button>
       </form>
       <?php if (MULTI_USER || (string)(col("SELECT value FROM settings WHERE key='password_hash'") ?: '') !== ''): ?>
-      <form method="post" class="side-logout"><input type="hidden" name="action" value="logout"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button type="submit" class="sm ghost">Log out</button></form>
+      <form method="post" class="side-logout"><input type="hidden" name="action" value="logout"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><?= is_guest() ? '<button type="submit" class="sm ghost" data-confirm="Leave the guest garage? Unless you keep it with an email, you can\'t come back to it.">Leave</button>' : '<button type="submit" class="sm ghost">Log out</button>' ?></form>
       <?php endif; ?>
     </div>
   </aside>
@@ -169,13 +169,13 @@ $f = flash();
     <button type="button" class="primary sm" data-install hidden>Install the app</button>
   </div>
   <?php if (MULTI_USER || (string)(col("SELECT value FROM settings WHERE key='password_hash'") ?: '') !== ''): ?>
-  <form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button type="submit" class="sm ghost" style="width:100%">Log out</button></form>
+  <form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><button type="submit" class="sm ghost" style="width:100%" <?= is_guest() ? 'data-confirm="Leave the guest garage? Unless you keep it with an email, you can\'t come back to it."' : '' ?>><?= is_guest() ? 'Leave guest garage' : 'Log out' ?></button></form>
   <?php endif; ?>
   <button type="button" class="sheet-close ghost" data-sheet-close>Close</button>
 </dialog>
 <?php endif; ?>
 <div id="lightbox" class="lightbox" hidden><img alt=""><button type="button" aria-label="Close">×</button></div>
-<script src="assets/app.js?v=8"></script>
+<script src="assets/app.js?v=9"></script>
 <?php if ($use3d): ?><script type="module" src="assets/car3d.js?v=9"></script><?php endif; ?>
 <?php if (!empty($useStage)): ?><script type="module" src="assets/showroom.js?v=4"></script><?php endif; ?>
 </body>
