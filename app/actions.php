@@ -666,6 +666,12 @@ case 'job_stage':
     if ($to === 'estimate') q("UPDATE job_lines SET status='pending' WHERE job_id=? AND status='approved'", [$id]);
     update('jobs', $d, (int)$id);
     job_refresh((int)$id);
+    // From the shop board: say what moved where, and stay on the board.
+    $back = post('back');
+    if ($back !== '' && str_starts_with($back, 'index.php?p=jobs')) {
+        $cn = (string)col('SELECT name FROM customers WHERE id=?', [$job['customer_id']]);
+        flash(($cn !== '' ? $cn . "'s " : '') . ($job['est_no'] ?: 'job') . ' → ' . JOB_STAGES[$to] . '.'); redirect($back);
+    }
     flash(JOB_STAGES[$to] . '.'); redirect(url('job', ['id' => $id]));
 
 case 'job_link':

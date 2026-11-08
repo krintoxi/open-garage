@@ -160,6 +160,11 @@ if ($page === 'parts_q') {
 }
 
 // Payroll export for a period (CSV; signed in).
+// Shop board live updates: a small fingerprint of everything the board shows; the page reloads when it changes.
+if ($page === 'board_ver') {
+    session_write_close(); header('Content-Type: application/json'); header('Cache-Control: no-store');
+    echo json_encode(['v' => board_version()]); exit;
+}
 if ($page === 'team_csv') {
     $_GET['period'] ??= 'week';
     $monday = strtotime('monday this week'); $period = (string)$_GET['period'];

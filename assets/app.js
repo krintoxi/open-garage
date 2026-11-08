@@ -552,3 +552,38 @@ document.querySelectorAll('[data-board]').forEach(board => {
     try { history.replaceState(null, '', t.href); } catch (_) {}
   }));
 });
+
+// Shop board: drag a card to the next column (only the moves the RO page offers), and live refresh when something changes.
+document.querySelectorAll('[data-board]').forEach(board => {
+  const form = board.parentElement.querySelector('[data-move-form]');
+  const cols = board.querySelectorAll('[data-col]');
+  let drag = null;
+  const clear = () => { board.classList.remove('is-dragging'); cols.forEach(c => c.classList.remove('drop-ok', 'drop-hover')); };
+  board.querySelectorAll('.ro-card[draggable=true]').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      drag = card; card.classList.add('dragging'); board.classList.add('is-dragging');
+      e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', card.dataset.job);
+      const moves = JSON.parse(card.dataset.moves || '{}'); cols.forEach(c => c.classList.toggle('drop-ok', !!moves[c.dataset.col]));
+    });
+    card.addEventListener('dragend', () => { card.classList.remove('dragging'); clear(); drag = null; });
+  });
+  cols.forEach(col => {
+    col.addEventListener('dragover', e => { if (drag && col.classList.contains('drop-ok')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; col.classList.add('drop-hover'); } });
+    col.addEventListener('dragleave', e => { if (!col.contains(e.relatedTarget)) col.classList.remove('drop-hover'); });
+    col.addEventListener('drop', e => {
+      if (!drag || !form) return; e.preventDefault();
+      const card = drag, to = JSON.parse(card.dataset.moves || '{}')[col.dataset.col]; clear();
+      if (!to || (to === 'invoiced' && card.dataset.over && !confirm(card.dataset.over))) return;
+      form.elements.id.value = card.dataset.job; form.elements.to.value = to; form.elements.back.value = 'index.php?p=jobs&tab=' + col.dataset.col;
+      card.classList.add('moving'); (col.querySelector('.bcol-empty') || {}).hidden = true; col.querySelector('h3').after(card); form.submit();
+    });
+  });
+  const url = board.dataset.verUrl, pill = document.querySelector('[data-live-pill]'); let ver = board.dataset.ver;
+  const busy = () => (document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) || document.querySelector('details.new-ro[open], details.more-tasks[open], dialog[open]') || board.classList.contains('is-dragging');
+  const check = async () => {
+    if (document.visibilityState !== 'visible') return;
+    try { const r = await fetch(url, { credentials: 'same-origin', cache: 'no-store' }); const j = await r.json();
+      if (j.v && j.v !== ver) { if (busy()) { ver = j.v; if (pill) pill.hidden = false; } else location.reload(); } } catch (_) {}
+  };
+  if (url) { setInterval(check, 30000); document.addEventListener('visibilitychange', check); }
+});

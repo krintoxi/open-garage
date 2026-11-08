@@ -19,7 +19,7 @@ $f = null;
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><?= h($authTitle) ?> · <?= h(APP_NAME) ?></title>
 <meta name="description" content="<?= $A && $A['items'] ? h($A['items'][0]['code'] . ': ' . $A['items'][0]['title'] . '. What it means, if it is safe to drive, likely causes, DIY checks, mechanic test plan and repair videos.') : 'Free check-engine code lookup for any car: meaning, causes, DIY fixes, mechanic test plans, recalls and repair videos.' ?>">
 <link rel="manifest" href="index.php?p=manifest"><link rel="icon" type="image/png" href="assets/favicon.png"><meta name="theme-color" content="#07080a">
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/app.css?v=19"></head>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/app.css?v=20"></head>
 <body class="public-lookup"><div class="main" style="max-width:1100px;margin:0 auto">
 <header class="pl-head"><a href="<?= url('login') ?>" class="pl-brand">✦ <?= h(APP_NAME) ?></a><span class="muted">Free code lookup</span>
   <span style="margin-left:auto" class="row"><?php if (GUESTS): ?><form method="post" action="index.php"><input type="hidden" name="action" value="guest"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="t0" value="<?= time() ?>"><button class="sm">Try the app</button></form><?php endif; ?><a class="btn sm primary" href="<?= url('signup') ?>">Free account</a></span></header>
@@ -38,4 +38,4 @@ $f = null;
 <div class="card"><h2>Look up any check-engine code</h2><p class="muted">Works for any car, truck or motorcycle with OBD-II / EOBD (US 1996+, EU 2001+ petrol and 2004+ diesel, and most others since). You get what it means, whether it is safe to drive, likely causes ranked, DIY checks, a mechanic test plan, known problems for your vehicle, recalls, owner complaints and repair videos.</p>
   <p>Popular: <?php foreach (['P0420', 'P0171', 'P0300', 'P0442', 'P0128', 'P0455', 'P0174', 'P0016', 'P0700', 'U0100'] as $pc): ?><a class="code" href="<?= url('lookup', ['codes' => $pc]) ?>"><?= $pc ?></a> <?php endforeach; ?></p></div>
 <?php endif; ?>
-</div><script src="assets/app.js?v=11"></script></body></html>
+</div><script src="assets/app.js?v=12"></script></body></html>

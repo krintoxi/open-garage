@@ -29,6 +29,18 @@ $anyJobs = (bool)col('SELECT 1 FROM jobs WHERE user_id=?', [uid()]);
 $nReq = (int)col("SELECT COUNT(*) FROM appointments WHERE user_id=? AND status='requested'", [uid()]);
 
 $plural = fn(int $n, string $one, string $many = '') => $n . ' ' . ($n === 1 ? $one : ($many ?: $one . 's'));
+$onClock = rows('SELECT t.id tid, t.name, t.color, e.kind, e.job_id FROM time_entries e JOIN techs t ON t.id=e.tech_id WHERE e.user_id=? AND e.ended_at IS NULL ORDER BY e.kind DESC', [uid()]);
+// Who is assigned to / clocked on each job on the board, for the little avatars on the cards.
+$techById = []; foreach (techs(false) as $t) $techById[(int)$t['id']] = $t;
+$jobIds = array_map(fn($j) => (int)$j['id'], $all);
+$assigned = []; $onIt = [];
+if ($jobIds) foreach (rows('SELECT DISTINCT job_id, tech_id FROM job_lines WHERE tech_id IS NOT NULL AND job_id IN (' . implode(',', $jobIds) . ')') as $r) $assigned[(int)$r['job_id']][(int)$r['tech_id']] = 1;
+foreach ($onClock as $oc) if ($oc['kind'] === 'job' && $oc['job_id']) { $onIt[(int)$oc['job_id']][] = $oc['name']; $assigned[(int)$oc['job_id']][(int)$oc['tid']] = 1; }
+$initials = fn(string $n) => mb_strtoupper(implode('', array_map(fn($w) => mb_substr($w, 0, 1), array_slice(preg_split('/\s+/', trim($n)) ?: [], 0, 2))));
+// Texting / calling the customer from the phone the shop already uses (nothing is sent by the app).
+$digits = fn(?string $p) => preg_replace('/[^\d+]/', '', (string)$p);
+$readyText = fn(array $j) => 'Hi' . ($j['cname'] ? ' ' . strtok((string)$j['cname'], ' ') : '') . ', this is ' . ($S['name'] ?: 'the shop') . '. Your ' . trim($j['vy'] . ' ' . $j['vm'] . ' ' . $j['vmo']) . ' is ready for pickup' . ((float)$j['total'] > 0 ? '. Total: ' . money((float)$j['total']) : '') . '.' . ($S['phone'] ? ' ' . $S['phone'] : '');
+$contact = fn(array $j, bool $text) => $digits($j['cphone']) === '' ? '' : '<a class="btn sm" href="tel:' . h($digits($j['cphone'])) . '">📞 Call</a>' . ($text ? '<a class="btn sm" href="sms:' . h($digits($j['cphone'])) . '?&amp;body=' . h(rawurlencode($readyText($j))) . '">💬 Text</a>' : '');
 $car = fn(array $j) => trim($j['vy'] . ' ' . $j['vm'] . ' ' . $j['vmo']) ?: 'vehicle';
 $who = fn(array $j) => $j['cname'] ?: 'the walk-in';
 $ago = function (?string $t): string {
@@ -59,16 +71,16 @@ foreach ($news as $n) {
     else $todo[] = ['💬', $nm . ' replied to ' . $n['est_no'], $n['title'] ?: 'Open it to see their answer.', url('job', ['id' => $n['id']]), 'Open', 'ok'];
 }
 if ($nReq) $todo[] = ['📅', 'Answer ' . ($nReq === 1 ? 'a booking request' : $nReq . ' booking requests'), 'Someone asked for a time online. Accept it, or call to suggest another.', url('calendar'), 'Answer', 'warn'];
-foreach (array_slice($by['done'] ?? [], 0, 3) as $j) $todo[] = ['📞', 'Tell ' . $who($j) . ' the ' . $j['vmo'] . ' is ready', $j['est_no'] . ' · ' . ($j['title'] ?: 'work done') . ($j['cphone'] ? ' · ' . $j['cphone'] : '') . '. Invoice it at pickup.', url('job', ['id' => $j['id']]), 'Invoice', ''];
+foreach (array_slice($by['done'] ?? [], 0, 3) as $j) $todo[] = ['📞', 'Tell ' . $who($j) . ' the ' . $j['vmo'] . ' is ready', $j['est_no'] . ' · ' . ($j['title'] ?: 'work done') . ($j['cphone'] ? ' · ' . $j['cphone'] : ' · no phone on file') . '. Invoice it at pickup.', url('job', ['id' => $j['id']]), 'Open', '', $contact($j, true)];
 $toOrder = count(parts_to_order());
 if ($toOrder) $todo[] = ['🛒', 'Order ' . $plural($toOrder, 'part'), 'Approved jobs are waiting on them.', url('purchasing'), 'Order', ''];
 foreach ($by['estimate'] ?? [] as $j) {
     if (!$j['sent_at']) $todo[] = ['✉️', 'Send ' . $who($j) . ' the estimate', $j['est_no'] . ' · ' . ($j['title'] ?: 'no services yet') . ((float)$j['total'] <= 0 ? '. Add services and prices first.' : ' · ' . money((float)$j['total']) . '.'), url('job', ['id' => $j['id']]), (float)$j['total'] <= 0 ? 'Finish' : 'Send', ''];
     elseif (strtotime((string)$j['sent_at']) < time() - 2 * 86400) $todo[] = ['📞', 'Follow up with ' . $who($j), $j['est_no'] . ' was sent ' . $ago($j['sent_at']) . ' and has no answer yet.', url('job', ['id' => $j['id']]), 'Open', ''];
 }
-foreach (array_slice($by['invoiced'] ?? [], 0, 3) as $j) $todo[] = ['💵', 'Collect ' . money((float)$j['total'] - (float)$j['paid']) . ' from ' . $who($j), ($j['inv_no'] ? 'Invoice ' . $j['inv_no'] : $j['est_no']) . ' · ' . $ago($j['invoiced_at'] ?: $j['updated_at']) . '.', url('job', ['id' => $j['id']]), 'Take payment', ''];
+foreach (array_slice($by['invoiced'] ?? [], 0, 3) as $j) $todo[] = ['💵', 'Collect ' . money((float)$j['total'] - (float)$j['paid']) . ' from ' . $who($j), ($j['inv_no'] ? 'Invoice ' . $j['inv_no'] : $j['est_no']) . ' · ' . $ago($j['invoiced_at'] ?: $j['updated_at']) . '.', url('job', ['id' => $j['id']]) . '#pay', 'Take payment', ''];
 $todoShow = 4;
-$taskLi = fn(array $t) => '<li class="task ' . h($t[5]) . '"><a href="' . $t[3] . '"><span class="task-ico" aria-hidden="true">' . h($t[0]) . '</span><span class="task-txt"><b>' . h($t[1]) . '</b><small>' . h($t[2]) . '</small></span><span class="task-go">' . h($t[4]) . ' <i aria-hidden="true">›</i></span></a></li>';
+$taskLi = fn(array $t) => '<li class="task ' . h($t[5]) . '"><a href="' . $t[3] . '"><span class="task-ico" aria-hidden="true">' . h($t[0]) . '</span><span class="task-txt"><b>' . h($t[1]) . '</b><small>' . h($t[2]) . '</small></span><span class="task-go">' . h($t[4]) . ' <i aria-hidden="true">›</i></span></a>' . (!empty($t[6]) ? '<div class="task-acts">' . $t[6] . '</div>' : '') . '</li>';
 // Which column a phone opens on: the busiest part of the day first.
 $tab = isset($_GET['tab'], $cols[$_GET['tab']]) ? (string)$_GET['tab'] : 'shop';
 if (!isset($_GET['tab'])) foreach (['shop', 'approved', 'done', 'estimate', 'invoiced', 'paid'] as $k) if (!empty($by[$k])) { $tab = $k; break; }
@@ -104,7 +116,7 @@ if ($doneN < count($req) && empty($S['setup_hidden'])): ?>
 <?php endif; ?>
 
 <?php $todayA = appts(today() . ' 00:00', date('Y-m-d', strtotime('+1 day')) . ' 00:00'); $todayA = array_values(array_filter($todayA, fn($x) => !in_array($x['status'], ['cancelled', 'no_show'], true)));
-  $onClock = rows('SELECT t.name, t.color, e.kind, e.job_id FROM time_entries e JOIN techs t ON t.id=e.tech_id WHERE e.user_id=? AND e.ended_at IS NULL ORDER BY e.kind DESC', [uid()]); ?>
+ ?>
 <?php if ($qq === ''): ?>
 <div class="card today-strip">
   <div><h3>Today's appointments <a class="muted" href="<?= url('calendar') ?>">Calendar ›</a></h3>
@@ -130,29 +142,62 @@ if ($doneN < count($req) && empty($S['setup_hidden'])): ?>
 <?php else: ?>
 <section class="sb-board">
   <div class="board-tabs" role="tablist" aria-label="Board columns"><?php foreach ($cols as $k => [$label]): $n = count($by[$k] ?? []); ?><a href="<?= url('jobs', array_filter(['tab' => $k, 'q' => $qq])) ?>" role="tab" data-tab="<?= $k ?>" aria-selected="<?= $k === $tab ? 'true' : 'false' ?>" class="<?= $n ? '' : 'none' ?>"><?= h($label) ?><b><?= $n ?></b></a><?php endforeach; ?></div>
-  <div class="board" data-board data-show="<?= h($tab) ?>">
+  <div class="board" data-board data-show="<?= h($tab) ?>" data-ver="<?= h(board_version()) ?>" data-ver-url="<?= url('board_ver') ?>">
   <?php foreach ($cols as $k => [$label, , $hint]): $items = $by[$k] ?? []; ?>
-  <div class="bcol bcol-<?= $k ?>"><h3><?= h($label) ?> <span class="muted"><?= count($items) ?></span></h3>
-    <?php foreach ($items as $j): $owed = (float)$j['total'] - (float)$j['paid']; ?>
-      <a class="ro-card" href="<?= url('job', ['id' => $j['id']]) ?>">
+  <div class="bcol bcol-<?= $k ?>" data-col="<?= $k ?>" data-col-label="<?= h($label) ?>"><h3><?= h($label) ?> <span class="muted"><?= count($items) ?></span></h3>
+    <?php foreach ($items as $j): $jid = (int)$j['id']; $owed = (float)$j['total'] - (float)$j['paid'];
+      // The one obvious next step for this card, and the columns it may be dragged to (the same moves the RO page offers).
+      [$nxLabel, $nxTo, $nxUrl] = match ($j['stage']) {
+          'estimate' => (float)$j['total'] <= 0 ? ['Add services', null, url('job', ['id' => $jid])] : (!$j['sent_at'] ? ['Send to customer', null, url('job', ['id' => $jid]) . '#send'] : ['Mark approved', 'approved', null]),
+          'approved' => ['Start work', 'in_progress', null],
+          'waiting_parts' => ['Parts are here', 'in_progress', null],
+          'in_progress' => ['Work done', 'done', null],
+          'done' => ['Create invoice', 'invoiced', null],
+          'invoiced' => ['Take payment', null, url('job', ['id' => $jid]) . '#pay'],
+          default => [null, null, null],
+      };
+      $moves = match ($j['stage']) { 'estimate' => ['approved' => 'approved'], 'approved' => ['shop' => 'in_progress'], 'in_progress' => ['done' => 'done'], 'waiting_parts' => [], 'done' => ['invoiced' => 'invoiced', 'shop' => 'in_progress'], default => [] };
+      $over = '';
+      if ($j['stage'] === 'done') { $as = job_auth_state($j, job_lines($jid)); if ($as['over']) $over = 'The total is over what the customer authorized. Record the extra authorization on the RO first unless you already have it. Create the invoice anyway?'; }
+      $hrs = null; if ($k === 'shop') { $sold = (float)job_totals($j, job_lines($jid), 'approved')['hours']; $clk = array_sum(job_clocked($jid)); if ($sold > 0 || $clk > 0) $hrs = [$clk, $sold]; }
+      $techs = array_values(array_filter(array_map(fn($tid) => $techById[$tid] ?? null, array_keys($assigned[$jid] ?? []))));
+    ?>
+      <div class="ro-card" data-job="<?= $jid ?>"<?= $moves ? ' draggable="true" data-moves="' . h(json_encode($moves)) . '"' : '' ?><?= $over ? ' data-over="' . h($over) . '"' : '' ?>>
+        <a class="ro-link" draggable="false" href="<?= url('job', ['id' => $jid]) ?>" aria-label="Open <?= h(($j['cname'] ?: 'walk-in') . ' ' . $j['est_no']) ?>"></a>
         <span class="ro-top"><span class="ro-no"><?= h(in_array($j['stage'], ['invoiced', 'paid'], true) && $j['inv_no'] ? 'Invoice ' . $j['inv_no'] : $j['est_no']) ?></span><span class="ro-when"><?= h($ago($j['updated_at'])) ?></span></span>
         <b><?= h($j['cname'] ?: 'Walk-in') ?></b>
         <small><?= h($car($j)) ?><?= $j['vplate'] ? ' · ' . h($j['vplate']) : '' ?></small>
         <?php if ($j['title']): ?><small class="ro-title"><?= h(mb_strimwidth((string)$j['title'], 0, 70, '…')) ?></small><?php endif; ?>
         <span class="ro-tags">
           <?php if (!(int)$j['seen_approval']): ?><i class="tag tag-ok">New reply</i><?php endif; ?>
-          <?php if ($k === 'shop' && isset($stageNote[$j['stage']])): ?><i class="tag tag-<?= $stageNote[$j['stage']][1] ?>"><?= $stageNote[$j['stage']][0] ?></i><?php endif; ?>
+          <?php if (!empty($onIt[$jid])): ?><i class="tag tag-live">● <?= h(implode(' & ', array_unique($onIt[$jid]))) ?> on it</i><?php elseif ($k === 'shop' && isset($stageNote[$j['stage']])): ?><i class="tag tag-<?= $stageNote[$j['stage']][1] ?>"><?= $stageNote[$j['stage']][0] ?></i><?php endif; ?>
           <?php if ($k === 'estimate'): ?><i class="tag"><?= $j['sent_at'] ? 'Sent ' . h($ago($j['sent_at'])) : 'Not sent yet' ?></i><?php endif; ?>
           <?php if ($j['promised'] && !in_array($k, ['invoiced', 'paid'], true)): ?><i class="tag tag-soon">⏰ <?= h($j['promised']) ?></i><?php endif; ?>
         </span>
-        <span class="ro-amt"><?= (float)$j['total'] > 0 ? money((float)$j['total']) : '<span class="muted">No price yet</span>' ?><?= $k === 'invoiced' && $j['paid'] > 0 ? ' <small>(' . money($owed) . ' left)</small>' : '' ?></span>
-      </a>
+        <?php if ($hrs): [$clk, $sold] = $hrs; $pct = $sold > 0 ? min(100, round($clk / $sold * 100)) : 100; ?>
+          <span class="ro-hrs" title="Clocked on this job vs labor hours sold"><span class="ro-bar<?= $sold > 0 && $clk > $sold ? ' over' : '' ?>"><i style="width:<?= $pct ?>%"></i></span><small><?= round($clk, 1) ?> of <?= round($sold, 1) ?> h</small></span>
+        <?php endif; ?>
+        <span class="ro-foot">
+          <span class="ro-amt"><?= (float)$j['total'] > 0 ? money((float)$j['total']) : '<span class="muted">No price yet</span>' ?><?= $k === 'invoiced' && $j['paid'] > 0 ? ' <small>(' . money($owed) . ' left)</small>' : '' ?></span>
+          <?php if ($techs): ?><span class="ro-techs"><?php foreach (array_slice($techs, 0, 3) as $t): ?><i style="--tc:<?= h($t['color'] ?: '#5e667a') ?>" title="<?= h($t['name']) ?>"><?= h($initials((string)$t['name'])) ?></i><?php endforeach; ?></span><?php endif; ?>
+        </span>
+        <?php if ($nxLabel || ($k === 'done' && $digits($j['cphone']) !== '')): ?>
+        <span class="ro-acts">
+          <?php if ($nxTo): ?><form method="post"><input type="hidden" name="action" value="job_stage"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="id" value="<?= $jid ?>"><input type="hidden" name="to" value="<?= h($nxTo) ?>"><input type="hidden" name="back" value="<?= h(url('jobs', array_filter(['tab' => $k, 'q' => $qq]))) ?>"><button class="sm primary"<?= $over && $nxTo === 'invoiced' ? ' data-confirm="' . h($over) . '"' : '' ?>><?= h($nxLabel) ?></button></form>
+          <?php elseif ($nxUrl): ?><a class="btn sm primary" href="<?= $nxUrl ?>"><?= h($nxLabel) ?></a><?php endif; ?>
+          <?php if ($k === 'done') echo $contact($j, true); ?>
+        </span>
+        <?php endif; ?>
+      </div>
     <?php endforeach; ?>
     <?php if (!$items): ?><p class="bcol-empty"><?= h($qq !== '' ? 'No matches here.' : $hint) ?></p><?php endif; ?>
   </div>
   <?php endforeach; ?>
   </div>
+  <form method="post" hidden data-move-form><input type="hidden" name="action" value="job_stage"><input type="hidden" name="_csrf" value="<?= csrf() ?>"><input type="hidden" name="id"><input type="hidden" name="to"><input type="hidden" name="back"></form>
+  <p class="board-hint">Tip: drag a card to the next column to move it along. The board updates by itself when a customer replies.</p>
 </section>
+<div class="live-pill" data-live-pill hidden><button type="button" onclick="location.reload()">New activity · Refresh</button></div>
 
 <section class="card sb-month">
   <h2>This month</h2>

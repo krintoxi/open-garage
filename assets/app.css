@@ -530,8 +530,8 @@ body.auth .login{align-items:flex-start;padding-top:min(10vh,90px)}
 .dash-quick a:hover{border-color:var(--accent);transform:translateY(-1px)}.dash-quick span{font-size:24px;line-height:1}
 .dash-next{margin-bottom:0}
 .tasks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.task a{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;background:var(--panel2);border:1px solid var(--border);color:var(--text);transition:border-color .15s}
-.task a:hover{border-color:var(--border2);color:var(--text)}.task a:hover .task-go{color:#fff}
+.task>a{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;background:var(--panel2);border:1px solid var(--border);color:var(--text);transition:border-color .15s}
+.task>a:hover{border-color:var(--border2);color:var(--text)}.task>a:hover .task-go{color:#fff}
 .task-ico{flex:0 0 40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:19px;background:rgba(255,255,255,.05)}
 .task.hot .task-ico{background:rgba(239,68,68,.18)}.task.warn .task-ico{background:rgba(245,158,11,.16)}
 .task-txt{flex:1;min-width:0}.task-txt b{display:block;font-weight:600;font-size:15px;line-height:1.3}
@@ -554,7 +554,7 @@ body.auth .login{align-items:flex-start;padding-top:min(10vh,90px)}
   .dash-quick{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 16px;margin:0 -16px 14px;padding:0 16px;scrollbar-width:none}
   .dash-quick::-webkit-scrollbar{display:none}
   .dash-quick a{flex:0 0 96px;scroll-snap-align:start;padding:12px 6px}
-  .task a{padding:12px;gap:12px}.task-go{font-size:0}.task-go i{font-size:24px;color:var(--muted)}
+  .task>a{padding:12px;gap:12px}.task-go{font-size:0}.task-go i{font-size:24px;color:var(--muted)}
   .plist .ptag{font-size:11px;padding:2px 8px}
 }
 
@@ -604,3 +604,19 @@ body.auth .login{align-items:flex-start;padding-top:min(10vh,90px)}
   .shopb .bcol h3{display:none}.bcol-empty{font-size:14px;text-align:center;padding:18px 0}
   .sbm-grid{grid-template-columns:1fr 1fr}
 }
+/* Shop board, round 2: next-step buttons, call/text, techs, hours, drag and drop, live refresh. */
+.task{background:var(--panel2);border:1px solid var(--border);border-radius:12px}.task>a{background:none;border:0}.task:hover{border-color:var(--border2)}
+.task-acts{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 12px 68px}
+.shopb .ro-card{position:relative}.ro-link{position:absolute;inset:0;z-index:1;border-radius:inherit}
+.ro-acts{position:relative;z-index:2;display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.ro-acts form{margin:0}.ro-acts .btn,.ro-acts button{padding:5px 10px;font-size:12.5px}
+.ro-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px}.ro-foot .ro-amt{margin-top:0}
+.ro-techs{display:flex}.ro-techs i{font-style:normal;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:700;color:#fff;background:var(--tc);border:2px solid var(--panel);margin-left:-6px}.ro-techs i:first-child{margin-left:0}
+.tag-live{color:#86efac;border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)}
+.ro-hrs{display:flex;align-items:center;gap:8px;margin-top:6px}.ro-hrs small{white-space:nowrap}
+.ro-bar{flex:1;height:5px;border-radius:99px;background:var(--panel2);overflow:hidden}.ro-bar i{display:block;height:100%;background:#3b82f6;border-radius:99px}.ro-bar.over i{background:var(--warn)}
+.ro-card[draggable=true]{cursor:grab}.ro-card.dragging{opacity:.45}.ro-card.moving{opacity:.6;pointer-events:none}
+.board.is-dragging .bcol{transition:background .15s,border-color .15s}.board.is-dragging .bcol:not(.drop-ok){opacity:.55}
+.bcol.drop-ok{border-color:rgba(225,6,0,.45);border-style:dashed}.bcol.drop-hover{background:var(--accent-soft);border-color:var(--accent)}
+.board-hint{color:var(--dim);font-size:12.5px;margin:8px 2px 0}
+.live-pill{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60}.live-pill button{border-radius:999px;padding:10px 18px;background:var(--accent);color:#fff;border:0;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.45);cursor:pointer}
+@media(max-width:800px){.board-hint{display:none}.live-pill{bottom:92px}.task-acts{padding-left:64px}}

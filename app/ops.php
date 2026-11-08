@@ -388,3 +388,14 @@ function shop_setup_steps(): array {
         ['Take card payments', stripe_on($S), url('shop') . '#cards', true],
     ];
 }
+
+/** Fingerprint of the shop board (jobs, approvals, booking requests, who is on the clock) for live refresh. */
+function board_version(): string {
+    $u = [uid()];
+    return substr(md5(implode('|', [
+        (string)col("SELECT COUNT(*) || '-' || COALESCE(MAX(updated_at),'') || '-' || SUM(seen_approval=0) FROM jobs WHERE user_id=?", $u),
+        (string)col("SELECT COUNT(*) || '-' || COALESCE(MAX(id),0) FROM appointments WHERE user_id=? AND status='requested'", $u),
+        (string)col("SELECT COUNT(*) || '-' || COALESCE(MAX(started_at),0) || '-' || COALESCE(MAX(ended_at),0) FROM time_entries WHERE user_id=?", $u),
+    ])), 0, 12);
+}
+
