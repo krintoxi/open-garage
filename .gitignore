@@ -1,0 +1,9 @@
+data/
+uploads/*
+!uploads/.htaccess
+app/config.local.php
+assets/models/*.glb
+manual/
+.DS_Store
+*.sqlite
+*.sqlite-*

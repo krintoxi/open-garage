@@ -1,0 +1,2 @@
+{ "name": "Garage", "short_name": "Garage", "start_url": "./index.php?p=dashboard", "display": "standalone", "background_color": "#07080a", "theme_color": "#07080a",
+  "icons": [ { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" }, { "src": "assets/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" } ] }
