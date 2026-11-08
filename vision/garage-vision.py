@@ -57,6 +57,12 @@ ID_PROMPTS = {
             "Output each VIN you can read on its own line, exactly as printed, best reading first. Output only VINs. If there is none, output NONE."),
     'plate': ("Read the vehicle licence (number) plate in this photo. Output exactly two lines: 'PLATE: <the characters, no spaces>' and "
               "'REGION: <US state or country printed on the plate, or UNKNOWN>'. If there is no readable plate, output NONE."),
+    'light': ("This photo shows a vehicle's instrument cluster or dashboard. List every warning or indicator light that is LIT (glowing), "
+              "using only these names: oil_pressure, coolant_temp, brake, charging, airbag, check_engine, reduced_power, transmission, abs, traction, "
+              "esp_off, tpms, power_steering, brake_wear, oil_level, coolant_level, glow_plug, dpf, adblue, hybrid_system, service, low_fuel, "
+              "washer_fluid, seatbelt, door_open, key, lane_assist, high_beam, cold_engine, cruise. "
+              "Output one per line as name:colour (red, amber, green or blue). Only list symbols you can clearly see lit; do not guess. "
+              "If no lights are lit, or this is not a dashboard, output NONE."),
 }
 
 
@@ -381,7 +387,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/read-id':
             kind = (parse_qs(urlparse(self.path).query).get('kind') or [''])[0]
             if kind not in ID_PROMPTS:
-                return self._send(400, {'error': 'kind must be vin or plate'})
+                return self._send(400, {'error': 'kind must be vin, plate or light'})
             if free_memory_pct() < OCR_MIN_FREE_PCT:
                 return self._send(503, {'error': 'busy: not enough free memory right now'})
             if not GPU.acquire(timeout=60):

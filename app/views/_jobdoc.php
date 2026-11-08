@@ -72,6 +72,6 @@ $auths = rows('SELECT * FROM job_auth WHERE job_id=? ORDER BY id', [$job['id']])
   <?php if ($job['notes_customer'] && !$wo): ?><p><?= nl2br(h($job['notes_customer'])) ?></p><?php endif; ?>
   <?php if ($wo && $job['notes_internal']): ?><p><b>Shop note:</b> <?= nl2br(h($job['notes_internal'])) ?></p><?php endif; ?>
   <?php if ($wo): ?><div class="tech-box"><b>Technician notes / measurements</b><div></div><div></div><div></div></div><?php endif; ?>
-  <?php if ($auths && !$wo): ?><p class="mut auth-rec"><b>Authorization:</b> <?php foreach ($auths as $a): ?><?= h($m($a['amount'])) ?> by <?= h($a['by_name'] ?: '—') ?>, <?= h(AUTH_METHODS[$a['method']] ?? $a['method']) ?>, <?= h(date('M j, Y g:i a', strtotime((string)$a['at']))) ?>. <?php endforeach; ?></p><?php endif; ?>
+  <?php if ($auths): ?><div class="mut auth-rec"><b>Customer approval<?= count($auths) > 1 ? 's' : '' ?>:</b><?php foreach ($auths as $a): ?><div><?= h(auth_line($a, $S)) ?></div><?php endforeach; ?><?php if ($inv && abs((float)$T['total'] - (float)$auths[count($auths) - 1]['amount']) > 0.005): ?><div>Final total <?= h($m($T['total'])) ?> vs last approved <?= h($m((float)$auths[count($auths) - 1]['amount'])) ?>.</div><?php endif; ?></div><?php endif; ?>
   <footer class="doc-foot"><?= $inv ? nl2br(h($S['inv_terms'])) . ($S['warranty'] ? '<br><b>Warranty:</b> ' . h($S['warranty']) : '') : ($wo ? '' : nl2br(h($S['est_terms']))) ?></footer>
 </div>

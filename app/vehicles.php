@@ -248,6 +248,7 @@ function delete_vehicle(int $vidDel): void {
     q('DELETE FROM inspection_results WHERE inspection_id IN (SELECT id FROM inspections WHERE vehicle_id=?)', [$vidDel]);
     foreach (SCOPED as $t) q("DELETE FROM $t WHERE vehicle_id=?", [$vidDel]);
     q('DELETE FROM diag_reports WHERE vehicle_id=?', [$vidDel]);
+    q('DELETE FROM handoffs WHERE vehicle_id=?', [$vidDel]);
     q('DELETE FROM vehicle WHERE id=?', [$vidDel]);
     foreach (array_unique($paths) as $pth) {
         if ((int)col('SELECT COUNT(*) FROM photos WHERE path=?', [$pth]) || (int)col('SELECT COUNT(*) FROM vehicle WHERE ? IN (photo, hero_cutout, hero_depth, mesh_glb)', [$pth])) continue;
@@ -404,6 +405,7 @@ function account_export(int $userId): array {
         $out['vehicles'][] = $e;
     }
     $out['mechanics'] = rows('SELECT * FROM mechanics WHERE user_id=?', [$userId]);
+    $out['shop_reports'] = rows('SELECT id, vehicle_id, concern, created_at, shop_name, imported_at, returned_at, revoked FROM handoffs WHERE user_id=?', [$userId]);
     foreach (['customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'shop_profile', 'appointments', 'techs', 'time_entries', 'vendors', 'purchase_orders'] as $t) $out[$t] = rows("SELECT * FROM $t WHERE user_id=?", [$userId]);
     foreach ($out['shop_profile'] as &$sp) { $d = json_decode((string)$sp['data'], true) ?: []; unset($d['stripe_sk']); $sp['data'] = json_encode($d); } unset($sp);
     $out['po_lines'] = rows('SELECT x.* FROM po_lines x JOIN purchase_orders p ON p.id=x.po_id WHERE p.user_id=?', [$userId]);

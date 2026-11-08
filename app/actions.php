@@ -18,6 +18,8 @@ const OWNED_BY_ACTION = [
 if ($id && isset(OWNED_BY_ACTION[$action]) && !owns(OWNED_BY_ACTION[$action], $id)) { http_response_code(404); exit('Not found'); }
 // Appointments, time clock, purchasing, card payments, admin: account-level, no vehicle needed.
 if (in_array($action, OPS_ACTIONS, true)) { require APP_ROOT . '/app/actions_ops.php'; exit; }
+if (in_array($action, CONNECT_ACTIONS, true)) { require APP_ROOT . '/app/actions_connect.php'; exit; }
+if (in_array($action, FU_ACTIONS, true)) { require APP_ROOT . '/app/actions_followups.php'; exit; }
 // Everything below works on the current vehicle; a new account has none until it adds one.
 if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set', 'mode_set', 'guest_keep', 'guest_end', 'diag_run', 'diag_delete', 'diag_to_vehicle', 'customer_save', 'customer_delete', 'customer_vehicle_add', 'tool_save', 'tool_preset', 'tool_delete', 'job_new', 'job_save', 'line_add', 'line_save', 'line_delete', 'group_action', 'canned_add', 'job_auth', 'job_stage', 'job_link', 'payment_add', 'payment_delete', 'job_copy', 'job_delete', 'inspect_start', 'inspect_save', 'shop_save', 'canned_save', 'canned_delete', 'catalog_save', 'catalog_delete', 'catalog_import'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
 
@@ -636,9 +638,16 @@ case 'job_auth':
     // Record an authorization (in person, phone, text, email): who, when, how, for how much.
     if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
     $job = row('SELECT * FROM jobs WHERE id=?', [$id]);
-    if (post('approve_pending') === '1') q("UPDATE job_lines SET status='approved' WHERE job_id=? AND status='pending'", [$id]);
+    $method = array_key_exists(post('method'), AUTH_NEEDS) ? post('method') : 'in_person';
+    $contact = mb_substr(post('contact'), 0, 120); $msg = mb_substr(post('msg'), 0, 4000);
+    if (post('by_name') === '') { flash('Write down who approved it.', 'err'); redirect(url('job', ['id' => $id]) . '#auth'); }
+    if ($method !== 'in_person' && $contact === '') { flash(AUTH_NEEDS[$method][2] . ' is required for a ' . strtolower(AUTH_NEEDS[$method][0]) . ' approval.', 'err'); redirect(url('job', ['id' => $id]) . '#auth'); }
+    if (in_array($method, ['text', 'email'], true) && $msg === '') { flash('Paste their ' . ($method === 'text' ? 'text' : 'email') . ' reply: the message itself has to be kept with the repair order.', 'err'); redirect(url('job', ['id' => $id]) . '#auth'); }
+    $newly = post('approve_pending') === '1' ? array_values(array_unique(array_column(rows("SELECT grp FROM job_lines WHERE job_id=? AND status='pending' AND kind<>'note'", [$id]), 'grp'))) : [];
+    $ver = job_snapshot((int)$id, 'Approved ' . strtolower(AUTH_NEEDS[$method][0]));
+    if ($newly) q("UPDATE job_lines SET status='approved' WHERE job_id=? AND status='pending'", [$id]);
     $amt = post_float('amount') ?? job_totals($job, job_lines((int)$id), 'approved')['total'];
-    insert('job_auth', ['job_id' => $id, 'amount' => $amt, 'method' => array_key_exists(post('method'), AUTH_METHODS) ? post('method') : 'in_person', 'by_name' => post('by_name'), 'note' => post('note'), 'at' => now()]);
+    insert('job_auth', ['job_id' => $id, 'amount' => $amt, 'method' => $method, 'by_name' => post('by_name'), 'contact' => $contact, 'msg' => $msg, 'ver' => $ver, 'lines' => mb_substr(implode(', ', $newly), 0, 500), 'note' => post('note'), 'at' => now()]);
     if (in_array($job['stage'], ['estimate', 'declined'], true)) q("UPDATE jobs SET stage='approved', approved_at=?, approved_by=? WHERE id=?", [now(), post('by_name'), $id]);
     job_refresh((int)$id);
     flash('Authorization recorded: ' . money($amt) . '.'); redirect(url('job', ['id' => $id]));
@@ -647,6 +656,10 @@ case 'job_stage':
     if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
     $job = row('SELECT * FROM jobs WHERE id=?', [$id]); $to = post('to');
     if (!array_key_exists($to, JOB_STAGES)) { http_response_code(400); exit('Bad stage'); }
+    if (in_array($to, ['done', 'invoiced'], true) && ($added = job_added_pending($job))) {
+        flash('Added work still needs the customer\'s approval: ' . implode(', ', $added) . '. Record their approval (or remove it) first.', 'err');
+        $b = post('back'); redirect($b !== '' && str_starts_with($b, 'index.php?p=jobs') ? $b : url('job', ['id' => $id]) . '#auth');
+    }
     $d = ['stage' => $to];
     if ($to === 'invoiced') {
         if (!$job['inv_no']) $d['inv_no'] = next_number('inv');
@@ -666,6 +679,8 @@ case 'job_stage':
     if ($to === 'estimate') q("UPDATE job_lines SET status='pending' WHERE job_id=? AND status='approved'", [$id]);
     update('jobs', $d, (int)$id);
     job_refresh((int)$id);
+    // A job that came from a customer's report: the finished work goes back to their garage when invoiced.
+    if ($to === 'invoiced' && $job['handoff_id']) handoff_return((int)$id);
     // From the shop board: say what moved where, and stay on the board.
     $back = post('back');
     if ($back !== '' && str_starts_with($back, 'index.php?p=jobs')) {
@@ -678,6 +693,7 @@ case 'job_link':
     if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
     if (!col('SELECT token FROM jobs WHERE id=?', [$id])) q('UPDATE jobs SET token=? WHERE id=?', [bin2hex(random_bytes(16)), $id]);
     q('UPDATE jobs SET sent_at=? WHERE id=?', [now(), $id]);
+    job_snapshot((int)$id, 'Sent to the customer');
     redirect(url('job', ['id' => $id]) . '#send');
 
 case 'payment_add':

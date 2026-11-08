@@ -100,7 +100,7 @@ footer{margin-top:36px;color:var(--mut);font-size:12px;border-top:1px solid var(
 <?php if (!$visits): ?><p class="mut">No completed visits recorded yet.</p><?php else: ?>
 <table><tr><th>Date</th><th>Work done</th><th class="hide-sm">Miles</th><?php if ($sh['include_costs']): ?><th>Cost</th><?php endif; ?></tr>
 <?php foreach ($visits as $x): ?><tr><td class="n"><?= fmt_date($x['scheduled_on'] ?: $x['created_at']) ?></td>
-  <td><b><?= h($x['title']) ?></b><?= $x['mech'] ? ' <span class="mut">· ' . h($x['mech']) . '</span>' : '' ?><?= $x['signed_off'] ? ' <span class="pill">signed off</span>' : '' ?>
+  <td><b><?= h($x['title']) ?></b><?= $x['mech'] ? ' <span class="mut">· ' . h($x['mech']) . '</span>' : '' ?><?= !empty($x['verified_by']) ? ' <span class="pill ok">✓ verified by ' . h($x['verified_by']) . '</span>' : ($x['signed_off'] ? ' <span class="pill">signed off</span>' : '') ?>
     <?php if ($x['completed_work']): ?><br><span class="mut"><?= nl2br(h(mb_strimwidth((string)$x['completed_work'], 0, 600, '…'))) ?></span><?php endif; ?></td>
   <td class="n hide-sm"><?= $x['miles'] ? number_format((int)$x['miles']) : '—' ?></td><?php if ($sh['include_costs']): ?><td class="n"><?= $x['cost'] !== null ? '$' . number_format((float)$x['cost'], 0) : '—' ?></td><?php endif; ?></tr><?php endforeach; ?>
 </table>
@@ -129,5 +129,5 @@ footer{margin-top:36px;color:var(--mut);font-size:12px;border-top:1px solid var(
 <table><tr><th>Date</th><th>Miles</th></tr><?php foreach ($log as $l): ?><tr><td class="n"><?= fmt_date($l['logged_at']) ?></td><td class="n"><?= number_format((int)$l['miles']) ?></td></tr><?php endforeach; ?></table>
 <?php endif; ?>
 
-<footer>Shared by the owner from <?= h(APP_NAME) ?> · generated <?= h(date('M j, Y')) ?>. Records are entered by the owner and their mechanics; they are not verified by <?= h(APP_NAME) ?>.</footer>
+<footer>Shared by the owner from <?= h(APP_NAME) ?> · generated <?= h(date('M j, Y')) ?>. Records are entered by the owner; visits marked verified were sent directly by the shop that did the work.</footer>
 </div><?php if (!empty($_GET['print'])): ?><script>addEventListener('load', () => setTimeout(() => print(), 400));</script><?php endif; ?></body></html>

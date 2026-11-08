@@ -94,6 +94,8 @@ if ($open) {
     $todo[] = ['🔧', $top['title'], $step ?: 'Open it to see what you can do yourself and what to tell the mechanic.', url('issue', ['id' => $top['id']]), 'See what to do', (int)$top['severity'] >= 4 ? 'hot' : ''];
 }
 if ($recallOpen) $todo[] = ['⚑', 'Check ' . (count($recallOpen) === 1 ? 'a safety recall' : count($recallOpen) . ' safety recalls'), 'Recall repairs are free at a dealer. It takes a minute to see if yours is affected.', url('recalls'), 'Check', 'warn'];
+$kbc = nhtsa_db() ? bulletin_counts($veh) : ['all' => 0, 'warranty' => 0, 'inv' => 0];
+if ($kbc['warranty']) $todo[] = ['🎁', $kbc['warranty'] . ' warranty extension' . ($kbc['warranty'] === 1 ? '' : 's') . ' for your ' . $short, 'The maker extended the warranty on some parts of this model. If one matches a problem you have, a dealer may fix it free.', url('bulletins'), 'See', 'ok'];
 if (!$lastInsp || $lastInspDays >= 7) $todo[] = ['✅', 'Do the 5-minute weekly check', is_two_wheeler($veh) ? 'Tires, brakes, oil level and lights.' : 'A quick look under the car, the fluid levels, the fan and the lights.', url('inspection_new'), 'Start', ''];
 foreach (array_slice($due, 0, 2) as [$m, $state, $lbl]) $todo[] = ['🛠', $m['item'], ucfirst($lbl) . '.', url('maintenance'), 'Open', $state === 'overdue' ? 'warn' : ''];
 if ($neverDone) $todo[] = ['📝', 'Fill in your service history', $plural(count($neverDone), 'item') . ' have no last-done date yet (' . implode(', ', array_map(fn($m) => $m['item'], array_slice($neverDone, 0, 3))) . (count($neverDone) > 3 ? ', …' : '') . '). Add what you know; skip the rest.', url('maintenance'), 'Fill in', ''];
@@ -116,6 +118,8 @@ $taskLi = fn(array $t) => '<li class="task ' . h($t[5]) . '"><a href="' . $t[3] 
       <small><?= h($hello) ?> 👋</small>
       <h2><?= h($headline) ?></h2>
       <p><?= h($sentence) ?></p>
+      <?php $VV = vehicle_verdict((int)$veh['id']); $vvTop = $VV['why'][0] ?? null; ?>
+      <a class="ds-verdict verdict-<?= h($VV['level']) ?>" href="<?= h($vvTop[2] ?? url('lights')) ?>"><?= VERDICTS[$VV['level']][0] ?> <b><?= h(['stop' => "Don't drive it until it's checked", 'book' => 'OK to drive gently · book a repair soon', 'watch' => 'OK to drive'][$VV['level']]) ?></b><?php if ($vvTop && $vvTop[0] === $VV['level'] && $VV['level'] !== 'watch'): ?><small><?= h(mb_strimwidth($vvTop[1], 0, 60, '…')) ?></small><?php endif; ?></a>
     </div>
   </div>
   <div class="ds-foot">
@@ -135,10 +139,11 @@ $taskLi = fn(array $t) => '<li class="task ' . h($t[5]) . '"><a href="' . $t[3] 
 
 <div class="dash-quick" role="navigation" aria-label="Quick actions">
   <a href="<?= url('diagnose') ?>"><span>🩺</span>Something's wrong</a>
+  <a href="<?= url('lights') ?>"><span>💡</span>What's this light?</a>
   <a href="<?= url('inspection_new') ?>"><span>✅</span>Weekly check</a>
   <a href="<?= url('visit_form') ?>"><span>🛠</span>Log a service</a>
   <a href="<?= url('issue_form') ?>"><span>➕</span>Note a problem</a>
-  <a href="<?= url('photos') ?>"><span>📷</span>Photos</a>
+  <a href="<?= url('send_shop') ?>"><span>📤</span>Send to a shop</a>
 </div>
 
 <?php if ($recallOpen): ?>
@@ -173,9 +178,9 @@ $taskLi = fn(array $t) => '<li class="task ' . h($t[5]) . '"><a href="' . $t[3] 
     <?php if ($nextVisit): $du = $nextVisit['scheduled_on'] ? days_until($nextVisit['scheduled_on']) : null; ?>
       <p style="margin:0 0 2px"><a href="<?= url('visit', ['id' => $nextVisit['id']]) ?>"><b><?= h($nextVisit['title']) ?></b></a></p>
       <p class="muted" style="margin:0 0 10px"><?= $du === null ? 'No date yet' : ($du === 0 ? 'Today' : ($du === 1 ? 'Tomorrow' : ($du > 0 ? 'In ' . $du . ' days' : abs($du) . ' days ago'))) . ($nextVisit['scheduled_on'] ? ' · ' . h(date('D, M j', strtotime($nextVisit['scheduled_on'])))  : '') ?><?= $nextVisit['mech'] ? ' · ' . h($nextVisit['mech']) : '' ?></p>
-      <div class="row"><a class="btn sm" href="<?= url('visit', ['id' => $nextVisit['id']]) ?>"><?= $nextVisit['scheduled_on'] ? 'Open' : 'Set a date' ?></a><a class="btn sm ghost" href="<?= url('brief', ['id' => $nextVisit['id']]) ?>" target="_blank">Print for the mechanic</a></div>
+      <div class="row"><a class="btn sm" href="<?= url('visit', ['id' => $nextVisit['id']]) ?>"><?= $nextVisit['scheduled_on'] ? 'Open' : 'Set a date' ?></a><a class="btn sm ghost" href="<?= url('send_shop') ?>">Send them a report</a></div>
     <?php else: ?>
-      <p class="muted" style="margin:0 0 10px">No visit planned.</p><a class="btn sm" href="<?= url('visit_form') ?>">Plan a visit</a>
+      <p class="muted" style="margin:0 0 10px">No visit planned.</p><div class="row"><a class="btn sm" href="<?= url('visit_form') ?>">Plan a visit</a><a class="btn sm ghost" href="<?= url('send_shop') ?>">Send a shop a report</a></div>
     <?php endif; ?>
     <p class="muted ds-mini"><?= $visits ? $plural($visits, 'visit') . ' on record' . ($spent > 0 ? ' · $' . number_format($spent, 0) . ' spent' : '') : 'Log your services here and keep the receipts in one place.' ?></p>
   </section>

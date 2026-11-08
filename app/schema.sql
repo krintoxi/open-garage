@@ -74,3 +74,8 @@ CREATE TABLE IF NOT EXISTS vendors (id INTEGER PRIMARY KEY, user_id INTEGER NOT 
 CREATE TABLE IF NOT EXISTS purchase_orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, vendor_id INT, po_no TEXT, status TEXT DEFAULT 'draft', ref TEXT, notes TEXT, ordered_at TEXT, received_at TEXT,
   total REAL DEFAULT 0, created_at TEXT, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS po_lines (id INTEGER PRIMARY KEY, po_id INT NOT NULL, job_line_id INT, catalog_id INT, part_no TEXT, brand TEXT, description TEXT, qty REAL DEFAULT 1, qty_received REAL DEFAULT 0, cost REAL DEFAULT 0);
+-- Driver -> shop reports (2026-11-08): what a driver chose to share with a shop, and what came back.
+CREATE TABLE IF NOT EXISTS handoffs (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, vehicle_id INT NOT NULL, token TEXT UNIQUE, concern TEXT, contact_name TEXT, contact_phone TEXT, contact_email TEXT,
+  issue_ids TEXT, photo_ids TEXT, codes TEXT, diag_id INT, show_history INT DEFAULT 1, allow_return INT DEFAULT 1, created_at TEXT, views INT DEFAULT 0, opened_at TEXT,
+  shop_user_id INT, shop_name TEXT, job_id INT, imported_at TEXT, returned_at TEXT, visit_id INT, revoked INT DEFAULT 0);
+CREATE INDEX IF NOT EXISTS idx_handoffs_veh ON handoffs (vehicle_id);

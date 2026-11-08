@@ -70,6 +70,11 @@ require APP_ROOT . '/app/obd_kb.php';
 require APP_ROOT . '/app/diag.php';
 require APP_ROOT . '/app/shop.php';
 require APP_ROOT . '/app/ops.php';
+require APP_ROOT . '/app/connect.php';
+require APP_ROOT . '/app/verdict.php';
+require APP_ROOT . '/app/nhtsa.php';
+require APP_ROOT . '/app/followups.php';
+require APP_ROOT . '/app/authz.php';
 
 function db(): PDO {
     static $pdo = null;
@@ -90,6 +95,9 @@ function db(): PDO {
     migrate_consumer($pdo);
     migrate_diag($pdo);
     migrate_ops($pdo);
+    migrate_connect($pdo);
+    migrate_followups($pdo);
+    migrate_authz($pdo);
     $count = (int)$pdo->query('SELECT COUNT(*) FROM vehicle')->fetchColumn();
     if ($count === 0 && !$pdo->query("SELECT 1 FROM settings WHERE key='seeded'")->fetchColumn()) {
         $pdo->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('seeded', datetime('now'))");

@@ -18,6 +18,7 @@ $canPhoto = VISION_URL !== '';
     <button name="mode" value="diy" class="<?= $pro ? '' : 'on' ?>">DIY</button><button name="mode" value="pro" class="<?= $pro ? 'on' : '' ?>">Mechanic</button></form>
 </div>
 
+<?php if (!$report && !$pro): ?><a class="callout diag-jump" href="<?= url('lights') ?>">💡 <b>A warning light is on?</b> Take a photo of the dashboard and we'll tell you if you can keep driving. <span style="margin-left:auto">→</span></a><?php endif; ?>
 <?php if ($report):
     $V = $report['vehicle_id'] ? (row('SELECT * FROM vehicle WHERE id=?', [(int)$report['vehicle_id']]) ?? []) : (json_decode((string)$report['vehicle_json'], true) ?: []);
     $A = diag_analyze($V, json_decode((string)$report['codes'], true) ?: [], (string)$report['freeze'], json_decode((string)$report['symptoms'], true) ?: []);

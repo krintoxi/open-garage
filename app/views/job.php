@@ -41,6 +41,7 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
     <p><?= h($C['name'] ?? 'No customer') ?><?= $V ? ' · ' . h(vehicle_name($V)) . ($V['plate'] ? ' · ' . h($V['plate']) : '') : '' ?> · opened <?= fmt_date($job['created_at']) ?><?= $job['inv_no'] ? ' · invoice ' . h($job['inv_no']) : '' ?></p></div>
   <div class="row" style="gap:6px;flex-wrap:wrap">
     <?php foreach ($next as [$to, $lbl, $cls]): ?><form method="post"><input type="hidden" name="action" value="job_stage"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><input type="hidden" name="to" value="<?= $to ?>"><button class="<?= $cls ?>" <?= $to === 'invoiced' && $auth['over'] ? 'data-confirm="The total is over the amount the customer authorized. Record additional authorization first unless you already have it. Create the invoice anyway?"' : '' ?>><?= h($lbl) ?></button></form><?php endforeach; ?>
+    <?php if ($V && $V['year'] && nhtsa_db()): $kbc = bulletin_counts($V); ?><a class="btn" href="<?= url('bulletins', ['vehicle' => $V['id']]) ?>" title="NHTSA service bulletins, warranty extensions and owner complaints for this vehicle">📋 Bulletins<?= $kbc['all'] ? ' (' . $kbc['all'] . ')' : '' ?></a><?php endif; ?>
     <details class="menu-pop"><summary class="btn">Print ▾</summary><div>
       <a href="<?= url('job_print', ['id' => $jid, 'doc' => 'estimate']) ?>" target="_blank">Estimate</a><a href="<?= url('job_print', ['id' => $jid, 'doc' => 'workorder']) ?>" target="_blank">Work order (tech copy)</a><a href="<?= url('job_print', ['id' => $jid, 'doc' => 'invoice']) ?>" target="_blank">Invoice</a></div></details>
   </div>
@@ -48,7 +49,23 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
 <?php if ($job['approved_at'] && $job['approved_by'] && strtotime((string)$job['approved_at']) > time() - 86400 * 2): ?><div class="flash">Approved by <?= h($job['approved_by']) ?> on <?= h(date('M j, g:i a', strtotime((string)$job['approved_at']))) ?><?= $job['approve_note'] ? ': “' . h($job['approve_note']) . '”' : '' ?>.</div><?php endif; ?>
 <?php if ($appt): ?><p class="muted" style="margin:-6px 0 12px">Appointment <?= h(date('D M j, g:i a', strtotime((string)$appt['starts_at']))) ?> · <a href="<?= url('calendar', ['d' => substr((string)$appt['starts_at'], 0, 10), 'a' => $appt['id']]) ?>">open</a></p><?php endif; ?>
 <?php if ($toOrder): ?><a class="flash" style="display:block" href="<?= url('purchasing', ['job' => $jid]) ?>">⇩ <?= $toOrder ?> approved part<?= $toOrder === 1 ? '' : 's' ?> still to order. Create a purchase order →</a><?php endif; ?>
-<?php if ($auth['over'] && !$est): ?><div class="flash flash-err">Current total <?= money($auth['current']) ?> is over the authorized <?= money($auth['authorized']) ?><?= $auth['over_limit'] ? ' by more than your limit' : '' ?>. Get and record additional authorization before doing the extra work.</div><?php endif; ?>
+<?php $HO = $job['handoff_id'] ? row('SELECT * FROM handoffs WHERE id=? AND revoked=0', [$job['handoff_id']]) : null; if ($HO): ?>
+<div class="ho-banner"><span class="ho-ico">📲</span><div class="grow"><b>From <?= h($HO['contact_name'] ?: 'the customer') ?>'s <?= h(APP_NAME) ?> report</b>
+  <small><?= $HO['allow_return'] ? ($HO['returned_at'] ? '✓ Finished work sent to their garage ' . h(date('M j', strtotime((string)$HO['returned_at']))) . '.' : 'When you invoice, the work and any declined recommendations go back to their garage, marked verified by your shop.') : 'They chose not to receive the record back.' ?></small></div>
+  <a class="btn sm" href="<?= h(handoff_url($HO['token'])) ?>" target="_blank" rel="noopener">Open report ↗</a>
+  <?php if ($HO['allow_return'] && in_array($job['stage'], ['invoiced', 'paid'], true)): ?><form method="post"><input type="hidden" name="action" value="handoff_return"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><button class="sm"><?= $HO['returned_at'] ? 'Send again' : 'Send to their garage' ?></button></form><?php endif; ?>
+</div>
+<?php endif; ?>
+<?php if ($job['vehicle_id'] && in_array($job['stage'], ['estimate', 'approved', 'in_progress', 'waiting_parts'], true)): followups_sync(); $FU = array_values(array_filter(followups_open((int)$job['vehicle_id']), fn($g) => $g['jid'] !== $jid)); if ($FU): ?>
+<div class="fu-callout"><div class="grow"><b>↻ Declined last time</b><small>Recommended on earlier visits and not done yet. Mention it while the car is here.</small>
+  <ul><?php foreach ($FU as $g): ?><li><?= h($g['grp']) ?><?= $g['amount'] > 0 ? ' · ' . money($g['amount']) : '' ?> <span class="muted">(<?= h($g['est_no']) ?>)</span></li><?php endforeach; ?></ul></div>
+  <form method="post"><input type="hidden" name="action" value="fu_book"><?= $csrf ?><input type="hidden" name="ids" value="<?= h(implode(',', array_merge(...array_column($FU, 'ids')))) ?>"><input type="hidden" name="into" value="<?= $jid ?>"><button class="sm">Add to this estimate</button></form></div>
+<?php endif; endif; ?>
+<?php $added = job_added_pending($job); if (($added || $auth['over']) && !$est): $pct = $auth['authorized'] > 0 ? round(($auth['current'] - $auth['authorized']) / $auth['authorized'] * 100) : null; ?>
+<div class="auth-alert"><span class="ho-ico">✋</span><div class="grow"><b><?= $added ? 'Added work needs the customer\'s OK' : 'Total is over what the customer approved' ?></b>
+  <small><?= $auth['authorized'] > 0 ? 'Approved ' . money($auth['authorized']) . ', now ' . money($auth['current']) . ($pct !== null && $pct > 0 ? ' (+' . $pct . '%)' : '') . '. ' : '' ?><?= $added ? h(implode(', ', $added)) . ' cannot be finished or invoiced until they approve it. ' : '' ?>Send the updated estimate, or record their approval by phone, text, email or in person.</small></div>
+  <a class="btn sm" href="#send">Send update</a><a class="btn sm primary" href="#auth" data-open-auth>Record approval</a></div>
+<?php endif; ?>
 
 <div class="grid g3 ro">
   <div style="grid-column:span 2">
@@ -219,17 +236,25 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
       <?php else: ?>
         <form method="post"><input type="hidden" name="action" value="job_link"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><button class="primary sm">Make customer link</button></form>
       <?php endif; ?>
-      <h3 style="margin-top:14px">Authorizations</h3>
+      <h3 style="margin-top:14px" id="auth">Approvals</h3>
       <?php if (!$auths): ?><p class="muted" style="font-size:13px">None recorded yet.</p><?php endif; ?>
-      <ul class="list"><?php foreach ($auths as $a): ?><li><div class="grow"><span class="t"><?= money((float)$a['amount']) ?> · <?= h(AUTH_METHODS[$a['method']] ?? $a['method']) ?></span><small><?= h($a['by_name'] ?: '—') ?> · <?= h(date('M j, Y g:i a', strtotime((string)$a['at']))) ?><?= $a['note'] ? ' · ' . h($a['note']) : '' ?></small></div></li><?php endforeach; ?></ul>
-      <details><summary class="muted">Record an authorization (phone, in person…)</summary>
-        <form method="post"><input type="hidden" name="action" value="job_auth"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>">
-          <label>How</label><select name="method"><?php foreach (AUTH_METHODS as $k => $lb): if ($k === 'link') continue; ?><option value="<?= $k ?>"><?= h($lb) ?></option><?php endforeach; ?></select>
-          <label>Authorized by</label><input type="text" name="by_name" value="<?= h((string)($C['name'] ?? '')) ?>" required>
-          <label>Amount authorized</label><input type="number" step="0.01" name="amount" value="<?= h((string)$tq['total']) ?>">
-          <label>Note (e.g. phone number called, time)</label><input type="text" name="note">
-          <label class="inline"><input type="checkbox" name="approve_pending" value="1" checked> Approve all services awaiting approval</label>
-          <button class="primary sm" style="margin-top:8px">Record</button></form></details>
+      <ul class="list auth-list"><?php foreach ($auths as $a): ?><li><div class="grow"><span class="t"><?= money((float)$a['amount']) ?> · <?= h($a['method'] === 'link' ? 'Approved online' : (AUTH_NEEDS[$a['method']][0] ?? $a['method'])) ?><?= $a['ver'] ? ' · v' . (int)$a['ver'] : '' ?></span>
+        <small><?= h($a['by_name'] ?: '—') ?> · <?= h(date('M j, Y g:i a', strtotime((string)$a['at']))) ?><?= $a['contact'] ? ' · ' . h($a['contact']) : '' ?><?= $a['ip'] ? ' · IP ' . h($a['ip']) : '' ?></small>
+        <?php if ($a['lines']): ?><small>For: <?= h($a['lines']) ?></small><?php endif; ?>
+        <?php if ($a['msg']): ?><details class="auth-msg"><summary>Their message</summary><p><?= nl2br(h($a['msg'])) ?></p></details><?php endif; ?>
+        <?php if ($a['note']): ?><small><?= h($a['note']) ?></small><?php endif; ?></div></li><?php endforeach; ?></ul>
+      <?php $vers = rows('SELECT ver, total, reason, created_at FROM job_versions WHERE job_id=? ORDER BY ver', [$jid]); if ($vers): ?><p class="muted" style="font-size:12.5px;margin:6px 0">Estimate versions: <?= implode(' · ', array_map(fn($v) => 'v' . (int)$v['ver'] . ' ' . money((float)$v['total']) . ' (' . h(strtolower((string)$v['reason'])) . ', ' . h(date('M j', strtotime((string)$v['created_at']))) . ')', $vers)) ?></p><?php endif; ?>
+      <details class="auth-form-wrap"<?= $added ? ' open' : '' ?>><summary class="muted">Record an approval (phone, text, email, in person)</summary>
+        <form method="post" data-auth-form><input type="hidden" name="action" value="job_auth"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>">
+          <label>How did they approve?</label><select name="method"><?php foreach (AUTH_NEEDS as $k => [$lb, $who, $how]): ?><option value="<?= $k ?>" data-who="<?= h($who) ?>" data-how="<?= h($how) ?>"><?= h($lb) ?></option><?php endforeach; ?></select>
+          <label data-who-label>Name of the person who signed</label><input type="text" name="by_name" value="<?= h((string)($C['name'] ?? '')) ?>" required>
+          <div data-how-row hidden><label data-how-label>Phone number you called</label><input type="text" name="contact" value="<?= h((string)($C['phone'] ?? '')) ?>" data-phone="<?= h((string)($C['phone'] ?? '')) ?>" data-email="<?= h((string)($C['email'] ?? '')) ?>"></div>
+          <div data-msg-row hidden><label>Their reply (paste it: it is kept with the repair order)</label><textarea name="msg" rows="2"></textarea></div>
+          <label>Amount approved</label><input type="number" step="0.01" name="amount" value="<?= h((string)$tq['total']) ?>">
+          <label>Note (optional)</label><input type="text" name="note" placeholder="e.g. said to go ahead if under $600">
+          <label class="inline"><input type="checkbox" name="approve_pending" value="1" checked> Mark the services waiting for approval as approved<?= $added ? ' (' . h(implode(', ', $added)) . ')' : '' ?></label>
+          <p class="muted" style="font-size:12px;margin:6px 0 0">Date and time are recorded automatically. California and most states require these details on the invoice; they print there.</p>
+          <button class="primary sm" style="margin-top:8px">Record approval</button></form></details>
     </div>
 
     <div class="card" id="pay" style="margin-top:14px">

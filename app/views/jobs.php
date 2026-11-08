@@ -70,6 +70,9 @@ foreach ($news as $n) {
     elseif (in_array($n['stage'], ['approved', 'in_progress', 'waiting_parts'], true)) $todo[] = ['🎉', $nm . ' approved ' . $n['est_no'], ($n['title'] ?: 'The estimate') . ($n['total'] > 0 ? ' · ' . money((float)$n['total']) : '') . '. Order the parts and get it started.', url('job', ['id' => $n['id']]), 'Open', 'ok'];
     else $todo[] = ['💬', $nm . ' replied to ' . $n['est_no'], $n['title'] ?: 'Open it to see their answer.', url('job', ['id' => $n['id']]), 'Open', 'ok'];
 }
+followups_sync(); $fuDue = followups_open(null, true);
+if ($fuDue) $todo[] = ['↻', 'Follow up with ' . $plural(count(array_unique(array_column($fuDue, 'customer_id'))), 'customer') . ' on declined work', money((float)array_sum(array_column($fuDue, 'amount'))) . ' of recommended work they said "not now" to. A quick call or text brings some back.', url('followups'), 'Follow up', ''];
+foreach (array_merge($by['approved'] ?? [], $by['shop'] ?? []) as $j) if ($ap = job_added_pending($j)) $todo[] = ['✋', 'Get ' . $who($j) . "'s OK for added work", $j['est_no'] . ': ' . implode(', ', $ap) . '. It cannot be finished or invoiced until they approve it.', url('job', ['id' => $j['id']]) . '#auth', 'Get approval', 'warn'];
 if ($nReq) $todo[] = ['📅', 'Answer ' . ($nReq === 1 ? 'a booking request' : $nReq . ' booking requests'), 'Someone asked for a time online. Accept it, or call to suggest another.', url('calendar'), 'Answer', 'warn'];
 foreach (array_slice($by['done'] ?? [], 0, 3) as $j) $todo[] = ['📞', 'Tell ' . $who($j) . ' the ' . $j['vmo'] . ' is ready', $j['est_no'] . ' · ' . ($j['title'] ?: 'work done') . ($j['cphone'] ? ' · ' . $j['cphone'] : ' · no phone on file') . '. Invoice it at pickup.', url('job', ['id' => $j['id']]), 'Open', '', $contact($j, true)];
 $toOrder = count(parts_to_order());
@@ -156,7 +159,9 @@ if ($doneN < count($req) && empty($S['setup_hidden'])): ?>
           'invoiced' => ['Take payment', null, url('job', ['id' => $jid]) . '#pay'],
           default => [null, null, null],
       };
-      $moves = match ($j['stage']) { 'estimate' => ['approved' => 'approved'], 'approved' => ['shop' => 'in_progress'], 'in_progress' => ['done' => 'done'], 'waiting_parts' => [], 'done' => ['invoiced' => 'invoiced', 'shop' => 'in_progress'], default => [] };
+      $addedP = job_added_pending($j);
+      if ($addedP) [$nxLabel, $nxTo, $nxUrl] = ['Get approval', null, url('job', ['id' => $jid]) . '#auth'];
+      $moves = $addedP ? [] : match ($j['stage']) { 'estimate' => ['approved' => 'approved'], 'approved' => ['shop' => 'in_progress'], 'in_progress' => ['done' => 'done'], 'waiting_parts' => [], 'done' => ['invoiced' => 'invoiced', 'shop' => 'in_progress'], default => [] };
       $over = '';
       if ($j['stage'] === 'done') { $as = job_auth_state($j, job_lines($jid)); if ($as['over']) $over = 'The total is over what the customer authorized. Record the extra authorization on the RO first unless you already have it. Create the invoice anyway?'; }
       $hrs = null; if ($k === 'shop') { $sold = (float)job_totals($j, job_lines($jid), 'approved')['hours']; $clk = array_sum(job_clocked($jid)); if ($sold > 0 || $clk > 0) $hrs = [$clk, $sold]; }
@@ -170,6 +175,7 @@ if ($doneN < count($req) && empty($S['setup_hidden'])): ?>
         <?php if ($j['title']): ?><small class="ro-title"><?= h(mb_strimwidth((string)$j['title'], 0, 70, '…')) ?></small><?php endif; ?>
         <span class="ro-tags">
           <?php if (!(int)$j['seen_approval']): ?><i class="tag tag-ok">New reply</i><?php endif; ?>
+          <?php if ($addedP): ?><i class="tag tag-red">✋ Added work needs OK</i><?php endif; ?>
           <?php if (!empty($onIt[$jid])): ?><i class="tag tag-live">● <?= h(implode(' & ', array_unique($onIt[$jid]))) ?> on it</i><?php elseif ($k === 'shop' && isset($stageNote[$j['stage']])): ?><i class="tag tag-<?= $stageNote[$j['stage']][1] ?>"><?= $stageNote[$j['stage']][0] ?></i><?php endif; ?>
           <?php if ($k === 'estimate'): ?><i class="tag"><?= $j['sent_at'] ? 'Sent ' . h($ago($j['sent_at'])) : 'Not sent yet' ?></i><?php endif; ?>
           <?php if ($j['promised'] && !in_array($k, ['invoiced', 'paid'], true)): ?><i class="tag tag-soon">⏰ <?= h($j['promised']) ?></i><?php endif; ?>
@@ -207,6 +213,7 @@ if ($doneN < count($req) && empty($S['setup_hidden'])): ?>
     <div><small>Owed to you</small><b><?= money($ar) ?></b><span><?= $plural(count($by['invoiced'] ?? []), 'unpaid invoice') ?></span></div>
     <div><small>Estimates approved</small><b><?= $sent ? round($won / $sent * 100) . '%' : '—' ?></b><span><?= $sent ? $won . ' of ' . $sent . ' sent' : 'none sent yet' ?></span></div>
   </div>
+  <?php $fs = followup_stats(90); if ($fs['total'] > 0): ?><p class="muted sbm-note">Declined work: <?= money($fs['won']) ?> of <?= money($fs['total']) ?> won back in the last 90 days<?= $fs['rate'] !== null ? ' (' . $fs['rate'] . '%)' : '' ?>. <a href="<?= url('followups') ?>">Follow-ups ›</a></p><?php endif; ?>
   <p class="muted sbm-note">You billed <?= round($hours, 1) ?> labor hours at an average <?= money($hours ? $labor / $hours : 0) ?>/h (your posted rate is <?= money((float)$S['labor_rate']) ?>/h). <a href="<?= url('team') ?>">Team &amp; payroll ›</a></p>
 </section>
 <?php endif; ?>

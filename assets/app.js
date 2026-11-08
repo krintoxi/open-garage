@@ -587,3 +587,45 @@ document.querySelectorAll('[data-board]').forEach(board => {
   };
   if (url) { setInterval(check, 30000); document.addEventListener('visibilitychange', check); }
 });
+
+// QR code for a link (Send to a shop): drawn on the phone with the same ZXing library the VIN scanner uses.
+document.querySelectorAll('[data-qr]').forEach(el => {
+  const draw = () => { try { el.appendChild(new window.ZXing.BrowserQRCodeSvgWriter().write(el.dataset.qr, 240, 240)); } catch (_) {} };
+  if (window.ZXing) return draw();
+  const sc = document.createElement('script');
+  sc.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+  sc.integrity = 'sha384-BzBxP10ZE72aitqj5UMmUsbKFliP/DZqA8Wq+BNNhlIJDGoEd1tpkMYXOg9+n6sB'; sc.crossOrigin = 'anonymous';
+  sc.onload = draw; document.head.appendChild(sc);
+});
+
+// Forms that take a while (photo reading): say so instead of looking frozen.
+document.querySelectorAll('form[data-busy]').forEach(f => f.addEventListener('submit', () => {
+  const n = document.createElement('p'); n.className = 'busy-note'; n.textContent = f.dataset.busy; f.appendChild(n);
+  f.querySelectorAll('button, .btn').forEach(b => b.classList.add('is-busy'));
+}));
+
+// Follow-ups: calling / texting / emailing a customer from the list also marks them as contacted (in the background).
+document.querySelectorAll('[data-fu-contact]').forEach(a => a.addEventListener('click', () => {
+  const tok = document.querySelector('input[name=_csrf]'); if (!tok) return;
+  const fd = new FormData(); fd.append('action', 'fu_contact'); fd.append('_csrf', tok.value); fd.append('ids', a.dataset.fuContact); fd.append('ajax', '1');
+  fetch('index.php', { method: 'POST', body: fd, credentials: 'same-origin' }).then(() => {
+    const c = a.closest('.fu-card'); if (c) { c.classList.add('fu-done'); const t = c.querySelector('.fu-tries'); if (t) t.textContent = 'Contacted just now ✓'; }
+    document.querySelectorAll('[data-fu-contact="' + a.dataset.fuContact + '"]').forEach(x => x.removeAttribute('data-fu-contact'));
+  }).catch(() => {});
+}, { once: true }));
+
+// Approval form: ask for what each method needs (number called, mobile number + their text, email + their email).
+document.querySelectorAll('[data-auth-form]').forEach(f => {
+  const sel = f.elements.method, c = f.elements.contact;
+  const sync = () => {
+    const o = sel.selectedOptions[0], m = sel.value;
+    f.querySelector('[data-who-label]').textContent = o.dataset.who;
+    const howRow = f.querySelector('[data-how-row]'); howRow.hidden = !o.dataset.how; c.required = !!o.dataset.how;
+    f.querySelector('[data-how-label]').textContent = o.dataset.how;
+    if (m === 'email' && (!c.value || c.value === c.dataset.phone)) c.value = c.dataset.email || '';
+    if (m !== 'email' && (!c.value || c.value === c.dataset.email)) c.value = c.dataset.phone || '';
+    const msgRow = f.querySelector('[data-msg-row]'); msgRow.hidden = !(m === 'text' || m === 'email'); f.elements.msg.required = !msgRow.hidden;
+  };
+  sel.addEventListener('change', sync); sync();
+});
+document.querySelectorAll('[data-open-auth]').forEach(a => a.addEventListener('click', () => { const d = document.querySelector('.auth-form-wrap'); if (d) d.open = true; }));

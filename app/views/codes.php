@@ -16,7 +16,7 @@ $total = (int)col('SELECT COUNT(*) FROM obd_codes');
   <div style="grid-column:span 2">
     <form method="get" class="search"><input type="hidden" name="p" value="codes"><input type="search" name="q" value="<?= h($qs) ?>" placeholder="Search code or words: P0442, misfire, fan, catalyst…"><select name="sys" style="width:170px"><option value="">All systems</option><?php foreach ($systems as $s): ?><option <?= $sys === $s ? 'selected' : '' ?>><?= h($s) ?></option><?php endforeach; ?></select><button type="submit">Search</button></form>
     <?php if ($qs !== '' && obd_norm($qs)): $KL = obd_lookup($qs, $veh); ?>
-      <a class="callout diag-jump" href="<?= url('diagnose', ['codes' => $KL['code']]) ?>"><b><?= h($KL['code']) ?></b> <?= h($KL['title']) ?><?= $KL['kb'] ? ' · ' . h(OBD_DRIVE[$KL['kb']['drive']][0]) : '' ?> <span style="margin-left:auto">Full diagnosis: causes, fixes, videos →</span></a>
+      <a class="callout diag-jump" href="<?= url('diagnose', ['codes' => $KL['code']]) ?>"><b><?= h($KL['code']) ?></b> <?= h($KL['title']) ?><?= $KL['kb'] ? ' ' . verdict_pill(verdict_from_drive($KL['kb']['drive'])) : '' ?> <span style="margin-left:auto">Full diagnosis: causes, fixes, videos →</span></a>
     <?php endif; ?>
     <?php if ($qs !== '' && !$exact && preg_match('/^[PBCU]\d{4}$/', $qs) && !obd_lookup($qs)['known']): ?>
       <div class="callout"><b><?= h($qs) ?></b> is not in the local library. <a href="https://www.obd-codes.com/<?= strtolower(h($qs)) ?>" target="_blank" rel="noopener">Look it up on OBD-Codes.com ↗</a> or <a href="https://www.google.com/search?q=<?= urlencode(trim($qs . ' ' . vehicle_name($veh))) ?>" target="_blank" rel="noopener">search with the car ↗</a>, then add it below so it is here next time.</div>

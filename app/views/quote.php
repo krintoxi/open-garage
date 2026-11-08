@@ -33,7 +33,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST['pay']) && in_array($j
         foreach ($pend as $g) q('UPDATE job_lines SET status=? WHERE job_id=? AND grp=? AND status=\'pending\'', [in_array($g, $yes, true) ? 'approved' : 'declined', $job['id'], $g]);
         $tot = job_totals($job, job_lines((int)$job['id']), 'approved')['total'];
         $note = mb_substr(trim((string)($_POST['note'] ?? '')), 0, 500);
-        if ($yes) insert('job_auth', ['job_id' => $job['id'], 'amount' => $tot, 'method' => 'link', 'by_name' => $name, 'note' => 'Approved: ' . implode(', ', $yes) . ($note ? ' · "' . $note . '"' : '') . ' · IP ' . $ip, 'at' => now()]);
+        if ($yes) {
+            $cu = $job['customer_id'] ? row('SELECT email, phone FROM customers WHERE id=?', [$job['customer_id']]) : null;
+            $ver = job_snapshot((int)$job['id'], 'Approved online');
+            insert('job_auth', ['job_id' => $job['id'], 'amount' => $tot, 'method' => 'link', 'by_name' => $name, 'contact' => trim(implode(' · ', array_filter([$cu['email'] ?? '', $cu['phone'] ?? '']))) ?: 'online link',
+                'ip' => $ip, 'ver' => $ver, 'lines' => mb_substr(implode(', ', $yes), 0, 500), 'msg' => $note, 'note' => 'Declined: ' . (implode(', ', array_diff($pend, $yes)) ?: 'none'), 'at' => now()]);
+        }
         $stage = $yes ? ($job['stage'] === 'estimate' || $job['stage'] === 'declined' ? 'approved' : $job['stage']) : ($job['stage'] === 'estimate' ? 'declined' : $job['stage']);
         q('UPDATE jobs SET stage=?, approved_at=?, approved_by=?, approve_note=?, seen_approval=0 WHERE id=?', [$stage, now(), $name, $note, $job['id']]);
         job_refresh((int)$job['id']);
