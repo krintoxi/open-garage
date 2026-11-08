@@ -37,3 +37,7 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS specs (id INTEGER PRIMARY KEY, category TEXT, item TEXT, value TEXT, source TEXT, confidence TEXT, notes TEXT, sort INT);
 CREATE TABLE IF NOT EXISTS manual_pages (id INTEGER PRIMARY KEY, edition TEXT, page INT, text TEXT);
 CREATE TABLE IF NOT EXISTS manual_facts (id INTEGER PRIMARY KEY, category TEXT, item TEXT, value TEXT, page INT, notes TEXT, sort INT);
+CREATE TABLE IF NOT EXISTS recalls (id INTEGER PRIMARY KEY, vehicle_id INTEGER NOT NULL DEFAULT 1, campaign TEXT, component TEXT, summary TEXT, consequence TEXT, remedy TEXT,
+  report_date TEXT, park_it INT DEFAULT 0, status TEXT DEFAULT 'open', found_at TEXT, UNIQUE (vehicle_id, campaign));
+CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY, vehicle_id INTEGER NOT NULL DEFAULT 1, token TEXT UNIQUE, created_at TEXT, revoked INT DEFAULT 0,
+  include_issues INT DEFAULT 1, include_costs INT DEFAULT 1, include_vin INT DEFAULT 0, views INT DEFAULT 0, last_view TEXT);

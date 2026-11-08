@@ -8,6 +8,7 @@ $authTitle = 'Create an account'; require __DIR__ . '/_authhead.php'; ?>
 <label>Your name (optional)</label><input type="text" name="name" autocomplete="given-name" maxlength="60">
 <label>Email</label><input type="email" name="email" required autocomplete="email" maxlength="190">
 <label>Password (8+ characters)</label><input type="password" name="password" required minlength="8" autocomplete="new-password">
+<?php if (reminders_available()): ?><label class="inline" style="margin-top:10px"><input type="checkbox" name="remind" value="1" checked> Email me once a week, only when something is due</label><?php endif; ?>
 <div class="hp" aria-hidden="true"><label>Website</label><input type="text" name="website" tabindex="-1" autocomplete="off"></div>
 <div class="row end" style="margin-top:14px"><button class="primary" type="submit">Create account</button></div>
 <?php endif; ?>

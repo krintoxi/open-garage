@@ -245,3 +245,75 @@ body.auth .login{display:flex;gap:40px;align-items:center;justify-content:center
 .stage-hero [hidden]{display:none!important}
 .is-cutout .stage-reflect{position:absolute;left:0;right:0;top:100%;margin-top:0}
 .vcard-art img.cut{object-fit:contain;filter:drop-shadow(0 14px 12px rgba(0,0,0,.7))}
+/* ---- 2026-11-08: health score, recalls, share, phone app shell ---- */
+.hring .hr-bg{fill:none;stroke:var(--border2);stroke-width:7}.hring .hr-fg{fill:none;stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset .8s ease}
+.hring text{font-family:var(--mono);font-weight:600;font-size:17px;fill:#fff}
+.hring-good .hr-fg{stroke:var(--ok)}.hring-ok .hr-fg{stroke:#a3e635}.hring-warn .hr-fg{stroke:var(--warn)}.hring-bad .hr-fg{stroke:var(--bad)}
+.health{display:flex;align-items:center;gap:16px;margin-bottom:14px;padding:14px 18px}
+.health-text{flex:1;min-width:0}.health-text small{text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:var(--muted)}
+.health-text>b{display:block;font-family:var(--head);font-size:24px;text-transform:uppercase;line-height:1.1;margin:1px 0 6px}
+.health-good .health-text>b{color:#86efac}.health-ok .health-text>b{color:#d9f99d}.health-warn .health-text>b{color:#fcd34d}.health-bad .health-text>b{color:#fca5a5}
+.health-why{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12.5px;padding:4px 10px;border-radius:999px;border:1px solid var(--border2);background:var(--panel2);color:var(--text);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.chip em{font-style:normal;color:var(--muted);font-family:var(--mono);font-size:11px;margin-left:2px}
+.chip-issue{border-color:#7f1d1d}.chip-recall{border-color:#78350f}.chip-service{border-color:#1e3a8a}
+.health-share{flex:0 0 auto}
+.recall-banner{display:flex;align-items:center;gap:14px;padding:14px 18px;margin-bottom:14px;border-radius:var(--radius);border:1px solid #92400e;background:linear-gradient(90deg,rgba(245,158,11,.16),rgba(245,158,11,.04));color:var(--text)}
+.recall-banner:hover{border-color:var(--warn);color:#fff}.recall-banner small{display:block;color:#fde68a;opacity:.85}
+.rb-ico{font-size:22px;color:var(--warn)}.rb-go{margin-left:auto;font-weight:600;color:#fcd34d;white-space:nowrap}
+.recall{border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:var(--panel2)}
+.recall.is-open{border-color:#78350f}.recall header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.recall header b{font-size:16px}
+.recall p{font-size:14px;margin:8px 0}.recall-park{color:#fca5a5;font-weight:600}
+.vin-copy{display:inline-block;margin-top:4px;padding:4px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--border2);cursor:pointer;letter-spacing:.05em}
+.share-link{display:flex;gap:8px}.share-link input{flex:1;min-width:0;font-family:var(--mono);font-size:13px}
+.vcard-health{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--muted)}.vcard-health .hring text{font-size:19px}
+.remind-row{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:10px 12px;margin:8px 0 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel2)}
+.remind-row small{display:block}
+.quick-btn{width:100%;justify-content:center;margin-bottom:8px;background:var(--accent-soft);border-color:#7f1d1d;color:#fff;font-weight:600}
+/* Sheets (Quick add, Menu) */
+dialog.sheet{border:1px solid var(--border2);border-radius:20px;background:var(--panel);color:var(--text);padding:14px 18px 18px;width:min(520px,calc(100% - 24px));max-height:86vh;overflow:auto}
+dialog.sheet::backdrop{background:rgba(3,4,6,.6);backdrop-filter:blur(4px)}
+dialog.sheet[open]{animation:sheetIn .22s ease-out}@keyframes sheetIn{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.sheet-grip{width:44px;height:5px;border-radius:9px;background:var(--border2);margin:0 auto 12px}
+.sheet h3{margin-bottom:12px}.sheet-close{width:100%;justify-content:center;margin-top:12px}
+.quick-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.quick-grid a{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding:14px 6px;border-radius:14px;background:var(--panel2);border:1px solid var(--border);font-size:13px;font-weight:500;color:var(--text);min-height:88px;justify-content:center}
+.quick-grid a span{font-size:22px}.quick-grid a:hover{border-color:var(--accent)}
+.sheet-miles{margin-top:14px}.sheet-miles .row{flex-wrap:nowrap}.sheet-miles input{flex:1}
+.sheet-vehicles{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;margin-bottom:8px;border-bottom:1px solid var(--border)}
+.sheet-vehicles a{flex:0 0 auto;padding:8px 12px;border-radius:999px;border:1px solid var(--border2);background:var(--panel2);font-size:14px;white-space:nowrap}
+.sheet-vehicles a.on{border-color:var(--accent);background:var(--accent-soft);color:#fff}.sheet-vehicles a.add{border-style:dashed}
+.menu-list{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+.menu-list a{display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;background:var(--panel2);border:1px solid var(--border);font-size:14px;color:var(--text)}
+.menu-list a.on{border-color:var(--accent)}.menu-list a span{width:20px;text-align:center}.menu-list .pill{margin-left:auto;background:var(--warn);color:#000;border-radius:999px;font-size:11px;padding:0 7px;font-style:normal}
+.install-tip{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;border:1px dashed var(--border2);margin-bottom:12px;font-size:14px}
+.install-tip[hidden],.install-tip [hidden]{display:none!important}
+/* Phone app shell: top bar + bottom tab bar replace the sidebar */
+.mtop,.tabbar{display:none}
+@media(max-width:800px){
+  body.has-tabbar .side{display:none}
+  body.has-tabbar .main{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+  body.has-tabbar .shell{display:block}
+  .mtop{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:40;order:-1;padding:calc(8px + env(safe-area-inset-top)) 14px 8px;background:rgba(7,8,10,.86);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+  body.has-tabbar .mtop{position:fixed;left:0;right:0}
+  body.has-tabbar .shell{padding-top:calc(58px + env(safe-area-inset-top))}
+  .mtop-brand{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+  .mtop-brand .star{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 40% 35%,#fff,#9aa3b8 45%,#2a2f3a 100%);color:#000;font-size:15px;flex:0 0 32px}
+  .mtop-brand b{display:block;font-family:var(--head);font-size:18px;text-transform:uppercase;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mtop-brand small{display:block;font-size:11.5px;color:var(--muted)}
+  .mtop-miles{width:40px;height:40px;border-radius:50%;justify-content:center;font-size:20px;padding:0}
+  .tabbar{display:grid;grid-template-columns:repeat(5,1fr);align-items:end;position:fixed;left:0;right:0;bottom:0;z-index:50;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(11,13,17,.94);backdrop-filter:blur(14px);border-top:1px solid var(--border)}
+  .tabbar a,.tabbar>button:not(.tab-add){display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;font-size:11px;color:var(--muted);background:none;border:0;border-radius:10px;font-weight:500}
+  .tabbar .ti{position:relative;font-size:19px;line-height:1.2}
+  .tabbar .ti i{position:absolute;top:-4px;right:-12px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--accent);color:#fff;font-size:10px;font-style:normal;line-height:17px;font-weight:600}
+  .tabbar .on{color:#fff}.tabbar .on .ti{color:var(--accent)}
+  .tab-add{justify-self:center;width:54px;height:54px;border-radius:50%;padding:0;justify-content:center;background:var(--accent);border:0;color:#fff;font-size:26px;box-shadow:0 6px 22px rgba(225,6,0,.45);transform:translateY(-10px)}
+  dialog.sheet{margin:auto 0 0;width:100%;max-width:100%;border-radius:22px 22px 0 0;border-bottom:0;padding-bottom:calc(18px + env(safe-area-inset-bottom));max-height:88vh}
+  dialog.sheet[open]{animation:sheetUp .25s ease-out}@keyframes sheetUp{from{transform:translateY(100%)}to{transform:none}}
+  .health{flex-wrap:wrap;padding:14px}.health-share{width:100%;justify-content:center}
+  .recall-banner{flex-wrap:wrap}.rb-go{margin-left:0}
+  .quick-grid a{min-height:80px}
+}
+@media(prefers-reduced-motion:reduce){dialog.sheet[open]{animation:none}.hring .hr-fg{transition:none}}
+@media print{.mtop,.tabbar,dialog.sheet{display:none!important}}
+.recall header .st{white-space:nowrap;flex:0 0 auto}

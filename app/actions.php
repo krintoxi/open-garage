@@ -13,11 +13,11 @@ const OWNED_BY_ACTION = [
     'common_status' => 'common_issues', 'common_to_issue' => 'common_issues', 'maint_save' => 'maintenance', 'maint_done' => 'maintenance', 'maint_delete' => 'maintenance',
     'check_save' => 'checks', 'check_toggle' => 'checks', 'inspection_delete' => 'inspections', 'visit_save' => 'visits', 'visit_complete' => 'visits',
     'visit_signoff' => 'visits', 'visit_delete' => 'visits', 'part_save' => 'parts', 'part_status' => 'parts', 'part_delete' => 'parts',
-    'mileage_delete' => 'mileage_log', 'mechanic_save' => 'mechanics', 'mechanic_delete' => 'mechanics', 'link_save' => 'links', 'link_delete' => 'links',
+    'mileage_delete' => 'mileage_log', 'recall_status' => 'recalls', 'mechanic_save' => 'mechanics', 'mechanic_delete' => 'mechanics', 'link_save' => 'links', 'link_delete' => 'links',
 ];
 if ($id && isset(OWNED_BY_ACTION[$action]) && !owns(OWNED_BY_ACTION[$action], $id)) { http_response_code(404); exit('Not found'); }
 // Everything below works on the current vehicle; a new account has none until it adds one.
-if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
+if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
 
 switch ($action) {
 
@@ -403,6 +403,32 @@ case 'link_save':
 
 case 'link_delete':
     q('DELETE FROM links WHERE id=?', [$id]); redirect(url('links'));
+
+case 'recalls_check':
+    $n = recalls_refresh(vid(), true);
+    $total = (int)col("SELECT COUNT(*) FROM recalls WHERE " . vw());
+    flash($n ? $n . ' new recall' . ($n === 1 ? '' : 's') . ' found. Check each one below.' : ((int)vehicle()['recalls_checked'] >= time() - 60 ? 'Checked with NHTSA just now: ' . ($total ? 'no new recalls.' : 'no recalls on record for this model.') : 'Could not reach NHTSA right now. Try again later.'), $n ? 'err' : 'ok');
+    redirect(url('recalls'));
+
+case 'recall_status':
+    if (array_key_exists(post('status'), RECALL_STATUSES)) q('UPDATE recalls SET status=? WHERE id=?', [post('status'), $id]);
+    redirect(url('recalls') . '#r' . $id);
+
+case 'share_create':
+    share_create(vid(), post('issues') === '1', post('costs') === '1', post('vin') === '1');
+    flash('Your service record link is ready. Anyone with the link can view it (read-only); you can turn it off any time.');
+    redirect(url('share'));
+
+case 'share_revoke':
+    q('UPDATE shares SET revoked=1 WHERE ' . vw());
+    flash('Link turned off. Anyone who had it now sees "not available".');
+    redirect(url('share'));
+
+case 'remind_set':
+    if (!MULTI_USER || !uid()) { http_response_code(400); exit('Unknown action'); }
+    q('UPDATE users SET remind_weekly=? WHERE id=?', [post('on') === '1' ? 1 : 0, uid()]);
+    flash(post('on') === '1' ? 'Weekly reminders on. You get an email only when something is due.' : 'Weekly reminders off.');
+    redirect(url('vehicle') . '#account');
 
 default:
     http_response_code(400); echo 'Unknown action';

@@ -13,7 +13,7 @@ if (!MULTI_USER && $pwHash === '' && !is_local_request()) {
     exit;
 }
 $authed = MULTI_USER ? (uid() > 0 && current_user() !== null) : ($pwHash === '' || hash_equals(auth_tag($pwHash), (string)($_SESSION['authed'] ?? '')));
-const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify'];
+const PUBLIC_PAGES = ['login', 'signup', 'forgot', 'reset', 'verify', 'record', 'manifest', 'unsub'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // A body larger than post_max_size arrives with $_POST and $_FILES empty: explain it instead of "Bad token".
@@ -33,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         login_failed($ip);
         flash(login_locked_for($ip) ? 'Too many wrong passwords. Try again in 15 min.' : 'Wrong password.', 'err'); redirect(url('login'));
     }
+    if ($action === 'unsub') { require APP_ROOT . '/app/views/unsub.php'; exit; }
     if (!$authed) redirect(url('login'));
     require __DIR__ . '/app/actions.php';
     exit;
@@ -43,7 +44,19 @@ if (!MULTI_USER && in_array($page, ['signup', 'forgot', 'reset', 'verify'], true
 if (!$authed && !in_array($page, PUBLIC_PAGES, true)) redirect(url('login'));
 if ($authed && in_array($page, ['login', 'signup', 'forgot'], true)) redirect(url('dashboard'));
 if (MULTI_USER && $page === 'verify') { require APP_ROOT . '/app/auth.php'; exit; }
-if (in_array($page, ['signup', 'forgot', 'reset'], true)) { require APP_ROOT . '/app/views/' . $page . '.php'; exit; }
+if (in_array($page, ['signup', 'forgot', 'reset', 'record', 'unsub'], true)) { require APP_ROOT . '/app/views/' . $page . '.php'; exit; }
+// Web app manifest (install to the home screen), named after this instance.
+if ($page === 'manifest') {
+    session_write_close();
+    header('Content-Type: application/manifest+json');
+    header('Cache-Control: public, max-age=3600');
+    echo json_encode(['name' => APP_NAME, 'short_name' => APP_NAME, 'id' => './', 'start_url' => './index.php?p=dashboard', 'scope' => './', 'display' => 'standalone',
+        'background_color' => '#07080a', 'theme_color' => '#07080a', 'description' => 'Your vehicles: problems, service, mechanic visits and photos in one place.',
+        'icons' => [['src' => 'assets/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'], ['src' => 'assets/apple-touch-icon.png', 'sizes' => '180x180', 'type' => 'image/png']],
+        'shortcuts' => [['name' => 'Report a problem', 'url' => './index.php?p=issue_form'], ['name' => 'Update mileage', 'url' => './index.php?p=mileage'], ['name' => 'Maintenance', 'url' => './index.php?p=maintenance']]],
+        JSON_UNESCAPED_SLASHES);
+    exit;
+}
 
 // Photos and receipts: streamed from UPLOAD_DIR only to a signed-in browser (never served as static files).
 if ($page === 'file') {
@@ -89,6 +102,15 @@ if ($page === 'vision') {
     exit;
 }
 
+// Weekly recall refresh for the vehicle on screen (called in the background by the dashboard).
+if ($page === 'recalls_sync') {
+    $rv = vid();
+    session_write_close();
+    header('Content-Type: application/json');
+    echo json_encode(['new' => $rv ? recalls_refresh($rv) : 0]);
+    exit;
+}
+
 // VIN lookup for the Add-vehicle form (JSON; signed-in only).
 if ($page === 'vin') {
     session_write_close();
@@ -98,7 +120,7 @@ if ($page === 'vin') {
 }
 
 $pages = ['dashboard','issues','issue','issue_form','codes','common','maintenance','inspections','inspection_new','inspection',
-          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage'];
+          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share'];
 if (!in_array($page, $pages, true)) { http_response_code(404); $page = 'dashboard'; }
 
 if ($page === 'export' && MULTI_USER) {

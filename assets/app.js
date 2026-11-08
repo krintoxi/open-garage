@@ -201,3 +201,52 @@ document.querySelectorAll('table').forEach(t => {
   });
   show(1, false); loadMakes(); syncKind();
 })();
+
+// Bottom sheets (Quick add, Menu): open, close on backdrop tap / Close / Escape.
+(() => {
+  document.querySelectorAll('[data-sheet-open]').forEach(b => b.addEventListener('click', () => {
+    const d = document.getElementById('sheet-' + b.dataset.sheetOpen);
+    if (d && typeof d.showModal === 'function') d.showModal();
+  }));
+  document.querySelectorAll('dialog.sheet').forEach(d => {
+    d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-sheet-close]')) d.close(); });
+  });
+})();
+
+// Copy-to-clipboard buttons and the phone's share menu.
+(() => {
+  document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); const t = b.textContent; b.textContent = 'Copied ✓'; setTimeout(() => { b.textContent = t; }, 1600); }
+    catch { const i = b.parentElement.querySelector('input'); if (i) { i.select(); document.execCommand('copy'); } }
+  }));
+  document.querySelectorAll('[data-select-all]').forEach(i => i.addEventListener('focus', () => i.select()));
+  document.querySelectorAll('[data-share-url]').forEach(b => {
+    if (!navigator.share) return;
+    b.hidden = false;
+    b.addEventListener('click', () => navigator.share({ title: b.dataset.shareTitle, url: b.dataset.shareUrl }).catch(() => {}));
+  });
+})();
+
+// Weekly recall check runs in the background; reload only when something new turns up.
+(() => {
+  if (!document.querySelector('[data-recalls-sync]')) return;
+  fetch('index.php?p=recalls_sync', { credentials: 'same-origin' }).then(r => r.json()).then(j => { if (j && j.new > 0) location.reload(); }).catch(() => {});
+})();
+
+// Installable app: service worker, the browser's install prompt, and the iPhone "Add to Home Screen" tip.
+(() => {
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const tip = document.querySelector('[data-install-tip]');
+  if (!tip || standalone) return;
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !/crios|fxios/i.test(navigator.userAgent);
+  if (ios) { tip.hidden = false; tip.querySelector('[data-ios-tip]').hidden = false; }
+  let deferred = null;
+  addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); deferred = e;
+    tip.hidden = false; const b = tip.querySelector('[data-install]'); b.hidden = false;
+    b.onclick = async () => { deferred.prompt(); await deferred.userChoice.catch(() => {}); deferred = null; tip.hidden = true; };
+  });
+})();

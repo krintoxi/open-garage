@@ -58,6 +58,7 @@ if (!defined('DATA_DIR')) define('DATA_DIR', APP_ROOT . '/data');
 if (!defined('UPLOAD_DIR')) define('UPLOAD_DIR', APP_ROOT . '/uploads');
 define('UPLOAD_URL', 'uploads');
 require APP_ROOT . '/app/vehicles.php';
+require APP_ROOT . '/app/consumer.php';
 
 function db(): PDO {
     static $pdo = null;
@@ -75,6 +76,7 @@ function db(): PDO {
     $pdo->exec('CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, fails INT NOT NULL DEFAULT 0, first_at INT NOT NULL DEFAULT 0, locked_until INT NOT NULL DEFAULT 0)');
     migrate_multi_vehicle($pdo);
     migrate_accounts($pdo);
+    migrate_consumer($pdo);
     $count = (int)$pdo->query('SELECT COUNT(*) FROM vehicle')->fetchColumn();
     if ($count === 0 && !$pdo->query("SELECT 1 FROM settings WHERE key='seeded'")->fetchColumn()) {
         $pdo->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('seeded', datetime('now'))");
@@ -100,7 +102,7 @@ function db(): PDO {
 }
 
 /** Tables whose rows belong to one vehicle (vehicle_id). Child tables (issue_notes, inspection_results, visit_issues) follow their parent. */
-const SCOPED = ['mileage_log','issues','code_events','maintenance','checks','inspections','visits','photos','parts','specs','common_issues','manual_pages','manual_facts'];
+const SCOPED = ['mileage_log','issues','code_events','maintenance','checks','inspections','visits','photos','parts','specs','common_issues','manual_pages','manual_facts','recalls','shares'];
 
 /**
  * Multi-vehicle support (2026-11-07). Adds vehicle_id to every per-vehicle table (existing rows go to the first vehicle)

@@ -24,8 +24,17 @@ it tells you what to do this week, keeps the history a shop can't argue with, an
 - **One owner or many.** Run it for yourself with one password, or as a hosted service with email sign-up
   (`MULTI_USER`): every account sees only its own vehicles, with password reset by email, per-account limits, sign-up
   throttling and a JSON export of your data.
-- **Phone-first and private.** Works as a home-screen app; photos are re-encoded on upload (location data stripped);
-  photos are only ever streamed to their owner.
+- **Health score.** One number (0-100) per vehicle with the reasons behind it: open problems by severity, overdue
+  service, recalls to check, active warning codes, a stale weekly check. Each reason links to the fix.
+- **Safety recalls.** Every vehicle is checked against the U.S. NHTSA recall database once a week (free, no key).
+  New recalls show as a banner; mark each one fixed or "doesn't apply to mine" after checking your VIN.
+- **Share your service record.** One read-only link (or a printed PDF) with the service history, mechanic visits,
+  odometer readings and recalls, for a mechanic or a buyer. You choose whether it shows costs, open problems and the
+  full VIN; turn it off any time. It never shows your name, email or your own photos.
+- **Weekly reminder email** (hosted mode): one email a week, only when something is due; one-click opt-out.
+- **Phone-first and private.** On a phone it is an app: bottom tab bar, a big ＋ for quick entries (problem, service
+  done, photos, mileage), installable to the home screen with an offline screen. Photos are re-encoded on upload
+  (location data stripped) and only ever streamed to their owner.
 
 | Stand-in drawing (no photo yet) | On a phone |
 |---|---|
@@ -52,13 +61,15 @@ and choose the mode:
 - **A hosted garage for others:** `define('MULTI_USER', true);` plus `BASE_URL`, and `MAIL_KEY` / `MAIL_FROM` (a
   [Resend](https://resend.com) key) for confirmation and password-reset emails. The first account to sign up is the admin.
 - **Showroom photos / 3D:** run [vision/](vision/) on a GPU machine and set `VISION_URL` / `VISION_TOKEN`.
+- **Reminder emails (hosted mode):** run `php app/tools/send-reminders.php` once a day from cron (`--dry-run` shows
+  who would get what). Each account gets at most one email a week, and none when nothing is due.
 
 ## Notes
 
 - Internal PHP files refuse direct requests, and `app/.htaccess` / `uploads/.htaccess` deny them on Apache. On other
   servers, block `/app`, `/data` and `/uploads` too.
-- Outbound requests happen only when you add a vehicle or look up a VIN: `vpic.nhtsa.dot.gov` and
-  `commons.wikimedia.org`.
+- Outbound requests: `vpic.nhtsa.dot.gov` and `commons.wikimedia.org` when you add a vehicle or look up a VIN, and
+  `api.nhtsa.gov` (year/make/model only, never the VIN) for the weekly recall check.
 - The OBD-II library covers the standard generic codes; add your own notes and codes from the OBD codes page.
 - 3D: see [assets/models/README.txt](assets/models/README.txt). No 3D model is included.
 - Screenshot credit: the Honda Civic stand-in photo is by MB-one, CC BY-SA 4.0, via Wikimedia Commons.

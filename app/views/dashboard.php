@@ -53,6 +53,22 @@ $mods = array_values(array_filter(array_map(fn($l) => trim(preg_replace('/^\s*[-
 <script>window.GARAGE_HOTSPOTS = <?= json_encode(array_values($byLoc), JSON_UNESCAPED_SLASHES) ?>;</script>
 <?php else: require APP_ROOT . '/app/views/_stage.php'; endif; ?>
 
+<?php $health = vehicle_health((int)$veh['id']); $recallOpen = rows("SELECT * FROM recalls WHERE " . vw() . " AND status='open' ORDER BY park_it DESC, report_date DESC");
+$recallStale = (int)($veh['recalls_checked'] ?? 0) < time() - 7 * 86400; ?>
+<div class="health card health-<?= h($health['tone']) ?>"<?= $recallStale ? ' data-recalls-sync' : '' ?>>
+  <?= health_ring($health, 76) ?>
+  <div class="health-text">
+    <small>Health score</small>
+    <b><?= h($health['grade']) ?></b>
+    <?php if ($health['reasons']): ?>
+      <div class="health-why"><?php foreach (array_slice($health['reasons'], 0, 4) as $r): ?><a href="<?= h($r['url']) ?>" class="chip chip-<?= h($r['kind']) ?>"><?= h(mb_strimwidth($r['label'], 0, 46, '…')) ?> <em>−<?= rtrim(rtrim(number_format($r['pts'], 1), '0'), '.') ?></em></a><?php endforeach; ?><?= count($health['reasons']) > 4 ? '<span class="muted" style="font-size:12px">+' . (count($health['reasons']) - 4) . ' more</span>' : '' ?></div>
+    <?php else: ?><span class="muted">Nothing open, nothing overdue. Keep logging and it stays that way.</span><?php endif; ?>
+  </div>
+  <a class="btn sm health-share" href="<?= url('share') ?>">⇪ Share record</a>
+</div>
+<?php if ($recallOpen): ?>
+<a class="recall-banner" href="<?= url('recalls') ?>"><span class="rb-ico">⚑</span><span><b><?= count($recallOpen) ?> safety recall<?= count($recallOpen) === 1 ? '' : 's' ?> for this model</b><small><?= h($recallOpen[0]['component']) ?><?= count($recallOpen) > 1 ? ' and more' : '' ?>. The repair is free at a dealer; check whether yours is affected.</small></span><span class="rb-go">Check →</span></a>
+<?php endif; ?>
 <div class="kpi">
   <div class="card <?= $sevMax >= 4 ? 'hot' : '' ?>"><div class="stat"><small>Most urgent right now</small><b style="font-size:17px;font-family:var(--font);line-height:1.25"><?= $open ? '<a href="' . url('issue', ['id' => $open[0]['id']]) . '">' . h($open[0]['title']) . '</a>' : 'Nothing open' ?></b><small><?= $sevMax ? 'severity ' . $sevMax . '/5 · ' . SEVERITY[$sevMax] . ($sevMax >= 4 ? ' · fix within 2 weeks' : '') : '' ?></small></div></div>
   <div class="card"><div class="stat"><small>Maintenance due</small><b><?= count($due) ?></b><small><?= count($due) ? 'overdue, due soon or missing a mileage' : 'nothing overdue' ?><?= $neverDone ? ' · <a href="' . url('maintenance') . '">' . count($neverDone) . ' never recorded: set last-done dates</a>' : '' ?></small></div></div>
@@ -63,6 +79,7 @@ $mods = array_values(array_filter(array_map(fn($l) => trim(preg_replace('/^\s*[-
 <?php
 $todo = [];
 if ($open) { $top = $open[0]; $first = ''; foreach (explode("\n", (string)$top['owner_guidance']) as $ln) { $ln = trim($ln); if ($ln !== '' && !str_ends_with($ln, ':')) { $first = preg_replace('/^(\d+\.|[-•*])\s*/', '', $ln); break; } } $todo[] = ['Do', $first ?: 'Open the top issue and follow the "For me" steps.', url('issue', ['id' => $top['id']])]; }
+if ($recallOpen) $todo[] = ['Recall', 'Check ' . (count($recallOpen) === 1 ? 'the safety recall' : 'the ' . count($recallOpen) . ' safety recalls') . ' against your VIN; a recall repair is free.', url('recalls')];
 if (!$lastInsp || $lastInspDays >= 7) $todo[] = ['Check', 'Do the 5-minute weekly check' . (is_two_wheeler($veh) ? ' (tires, brakes, oil level, lights).' : ' (cardboard under the car, fluid levels, fan, lights).') . '', url('inspection_new')];
 foreach (array_slice($due, 0, 2) as [$m, $state, $lbl]) $todo[] = ['Service', $m['item'] . ': ' . $lbl . '.', url('maintenance')];
 if ($neverDone) $todo[] = ['Record', count($neverDone) . ' maintenance item' . (count($neverDone) === 1 ? ' has' : 's have') . ' never been recorded (' . implode(', ', array_map(fn($m) => $m['item'], array_slice($neverDone, 0, 3))) . (count($neverDone) > 3 ? ', …' : '') . '). Enter when each was last done, or have it checked at the next visit.', url('maintenance')];

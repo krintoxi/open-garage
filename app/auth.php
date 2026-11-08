@@ -60,7 +60,7 @@ case 'signup':
     if (!rate_ok('signup:' . $ip, 4, 3600)) $back('Too many sign-ups from this network. Try again in an hour.');
     if (col('SELECT 1 FROM users WHERE email=?', [$email])) $back('There is already an account with that email. Sign in, or reset the password.');
     $first = !(int)col('SELECT COUNT(*) FROM users');
-    $id = insert('users', ['email' => $email, 'pw_hash' => password_hash($pw, PASSWORD_DEFAULT), 'name' => post('name'), 'created_at' => now(), 'is_admin' => $first ? 1 : 0]);
+    $id = insert('users', ['email' => $email, 'pw_hash' => password_hash($pw, PASSWORD_DEFAULT), 'name' => post('name'), 'created_at' => now(), 'is_admin' => $first ? 1 : 0, 'remind_weekly' => post('remind') === '1' && reminders_available() ? 1 : 0]);
     $u = row('SELECT * FROM users WHERE id=?', [$id]);
     mu_sign_in($u);
     $sent = mail_verify($u);

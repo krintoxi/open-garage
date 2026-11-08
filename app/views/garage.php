@@ -28,6 +28,7 @@ foreach ($list as $gv) {
         <span class="<?= $st['sev'] >= 4 ? 'hot' : '' ?>"><?= $st['open'] ?> open issue<?= $st['open'] === 1 ? '' : 's' ?></span>
         <span class="<?= $st['due'] ? 'warn' : '' ?>"><?= $st['due'] ?> due</span>
       </div>
+      <?php $gh = vehicle_health($id); ?><div class="vcard-health" title="Health score: <?= h($gh['grade']) ?>"><?= health_ring($gh, 44) ?><span><?= h($gh['grade']) ?></span></div>
     </div>
   </a>
   <?php endforeach; ?>
