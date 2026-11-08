@@ -89,6 +89,6 @@ $f = flash();
 <div id="lightbox" class="lightbox" hidden><img alt=""><button type="button" aria-label="Close">×</button></div>
 <script src="assets/app.js?v=4"></script>
 <?php if ($use3d): ?><script type="module" src="assets/car3d.js?v=9"></script><?php endif; ?>
-<?php if (!empty($useStage)): ?><script type="module" src="assets/showroom.js?v=2"></script><?php endif; ?>
+<?php if (!empty($useStage)): ?><script type="module" src="assets/showroom.js?v=4"></script><?php endif; ?>
 </body>
 </html>

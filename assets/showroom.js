@@ -151,7 +151,13 @@ async function openViewer(stage, glbUrl) {
   renderer.domElement.style.touchAction = 'pan-y';
   const g = await new GLTFLoader().loadAsync(glbUrl);
   const m = g.scene;
-  m.traverse(o => { if (o.isMesh) { o.material = new THREE.MeshStandardMaterial({ vertexColors: !!o.geometry.attributes.color, roughness: 0.55, metalness: 0.15, side: THREE.DoubleSide }); } });
+  m.traverse(o => {
+    if (!o.isMesh) return;
+    if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); // single-photo meshes may come without normals
+    const col = o.geometry.attributes.color; // TripoSR writes sRGB vertex colours; three.js expects linear
+    if (col && !o.geometry.userData.linearised) { for (let i = 0; i < col.count; i++) for (let c = 0; c < 3; c++) { const v = col.array[i * col.itemSize + c] / (col.normalized ? 255 : 1); const lin = Math.pow(v, 2.2); col.array[i * col.itemSize + c] = col.normalized ? Math.round(lin * 255) : lin; } col.needsUpdate = true; o.geometry.userData.linearised = true; }
+    o.material = new THREE.MeshStandardMaterial({ vertexColors: !!o.geometry.attributes.color, roughness: 0.55, metalness: 0.15, side: THREE.DoubleSide });
+  });
   const box = new THREE.Box3().setFromObject(m), c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
   m.position.sub(c); m.position.y += s.y / 2;
   scene.add(m);

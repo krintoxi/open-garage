@@ -228,7 +228,10 @@ def mesh_job(job, data):
             import trimesh
             mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
             out = os.path.join(JOBS, job + '.glb')
-            mesh.export(out)
+            mesh.fix_normals()
+            from trimesh.exchange.gltf import export_glb
+            with open(out, 'wb') as f:
+                f.write(export_glb(mesh, include_normals=True))
             MESH[job].update(status='done', progress=1.0, path=out)
         except Exception as e:  # report, never crash the worker
             MESH[job].update(status='error', error=str(e)[:300])
