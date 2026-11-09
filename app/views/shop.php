@@ -91,6 +91,7 @@ $i = fn(string $k) => h((string)$S[$k]);
 </div>
 
 <div class="grid g2" style="margin-top:18px">
+  <div id="push" style="margin-bottom:18px"><?= push_card('Get a ping when a customer approves an estimate, books online, pays by card or sends you their car\'s report.') ?></div>
   <form method="post" class="card" id="booking"><input type="hidden" name="action" value="booking_save"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
     <h2>Hours and booking</h2>
     <table class="hours"><?php $hh = shop_hours($S); foreach (WEEKDAYS as $n => $dn): ?><tr><td><label class="inline" style="margin:0"><input type="checkbox" name="day[<?= $n ?>]" value="1" <?= $hh[$n] ? 'checked' : '' ?>> <?= $dn ?></label></td>

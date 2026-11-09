@@ -725,3 +725,4 @@ body.auth .login{align-items:flex-start;padding-top:min(10vh,90px)}
 .route-link{margin-bottom:12px}.mobile-fees form{margin:0}
 .pay-qr{margin:0 0 12px}.pay-qr-box{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px}.pay-qr-box p{flex:1 1 180px;margin:0}
 .offline-q{border-color:rgba(245,158,11,.55)!important;background:rgba(245,158,11,.1)!important}
+.push-card h2{font-family:var(--font);text-transform:none;letter-spacing:0;font-size:17px}.push-state{margin:4px 0 10px;font-size:14px;color:var(--silver)}

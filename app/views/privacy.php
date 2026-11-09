@@ -15,6 +15,7 @@ $signedIn = !empty($authed);
     <li><b>Photos you ask us to read</b> (VIN, plate, warning lights, scan screenshots) are read by our own model on our own server. They are not sent to an outside AI company.</li>
     <li><b>NHTSA</b> (the US safety agency) gets the VIN or the year, make and model when we look up the vehicle, recalls, bulletins and complaints. Nothing about you.</li>
     <li><b>Email</b> goes out through our email provider only to send the messages you asked for.</li>
+    <li><b>Notifications</b> you turn on are sealed (encrypted) for your phone only; your browser's push service (Google, Apple or Mozilla) delivers them but can't read them.</li>
     <li><b>Shops:</b> only what you choose to send with "Send to a shop", and you can turn a link off any time. Card payments go through the shop's own Stripe account.</li>
     <li>No ad trackers and no analytics companies. Some pages load fonts from Google Fonts and the barcode scanner from the jsDelivr code library, which see your IP address like any website you visit.</li>
   </ul>

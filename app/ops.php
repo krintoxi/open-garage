@@ -264,6 +264,8 @@ function stripe_confirm(array $job, string $sessionId): ?float {
     } catch (PDOException) { return 0.0; }
     q('UPDATE jobs SET seen_approval=0 WHERE id=?', [$job['id']]);
     job_refresh((int)$job['id']);
+    $cn = $job['customer_id'] ? (string)col('SELECT name FROM customers WHERE id=?', [$job['customer_id']]) : '';
+    push_send((int)$job['user_id'], 'Payment received: ' . money($amt, $s), ($cn !== '' ? $cn . ' · ' : '') . ($job['inv_no'] ? 'Invoice ' . $job['inv_no'] : $job['est_no']) . ' · paid online by card', url('job', ['id' => $job['id']]), false, 'pay-' . $job['id']);
     return $amt;
 }
 
@@ -302,6 +304,12 @@ function us_state_code(string $s): string {
     if (isset(US_STATES[$s])) return $s;
     foreach (US_STATES as $k => $n) if ($s !== '' && str_contains($s, $n)) return $k;
     return '';
+}
+/** A plate already on one of the signed-in account's vehicles (spaces and dashes ignored), newest first. */
+function plate_known(string $plate): ?array {
+    $p = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $plate));
+    if (strlen($p) < 2) return null;
+    return row("SELECT v.*, c.name cname FROM vehicle v LEFT JOIN customers c ON c.id=v.customer_id WHERE v.user_id=? AND upper(replace(replace(replace(COALESCE(v.plate,''),' ',''),'-',''),'·',''))=? ORDER BY v.id DESC LIMIT 1", [uid(), $p]);
 }
 function plate_lookup_available(): bool { return PLATE_KEY !== '' && in_array(PLATE_PROVIDER, ['autodev', 'carsxe', 'vinaudit'], true); }
 /** Plate + US state to VIN through the configured provider (paid; registration data). Cached 90 days. */
@@ -350,8 +358,16 @@ function id_scan(string $kind, ?array $file, string $barcode = '', string $rateK
     if ($plate === '') return ['error' => 'No plate found in that photo. Get the whole plate in the frame, straight on.'];
     $state = us_state_code($region);
     $out = ['plate' => $plate, 'state' => $state, 'region' => strtoupper($region) === 'UNKNOWN' ? '' : $region];
+    // Free plate memory: a plate already on one of this account's vehicles (a returning customer) fills everything in.
+    // Signed-in accounts only, and only their own records (never on the public booking page).
+    if (uid() > 0 && !str_starts_with($rateKey, 'ip:') && ($kv = plate_known($plate))) {
+        $out += array_filter(['vin' => $kv['vin'], 'year' => $kv['year'], 'make' => $kv['make'], 'model' => $kv['model'], 'trim' => $kv['trim'], 'engine' => $kv['engine'], 'transmission' => $kv['transmission'], 'kind' => $kv['kind']]);
+        $out['hint'] = 'Known plate: ' . ($kv['cname'] ? $kv['cname'] . "'s " : 'your ') . vehicle_name($kv) . '.';
+        $out['known_vehicle_id'] = (int)$kv['id'];
+        return $out;
+    }
     if ($vin = plate_to_vin($plate, $state)) $out += vin_decode_world($vin) + ['vin' => $vin];
-    elseif (!plate_lookup_available()) $out['hint'] = 'Plate read. Scan the VIN too to fill in the vehicle (plate-to-vehicle lookups need a paid registration-data service, which is not switched on here).';
+    elseif (!plate_lookup_available()) $out['hint'] = 'Plate read. Scan the VIN once (the barcode on the driver door frame) and this plate will be remembered with the vehicle next time.';
     else $out['hint'] = 'Plate read, but the registration lookup found no vehicle for it. Scan the VIN instead.';
     return $out;
 }
@@ -387,6 +403,7 @@ function shop_setup_steps(): array {
         ['Add your first customer', (bool)col('SELECT 1 FROM customers WHERE user_id=?', [uid()]), url('customers', ['c' => 'new']) . '#cform', false],
         ['Write your first estimate', (bool)col('SELECT 1 FROM jobs WHERE user_id=?', [uid()]), url('jobs', ['new' => 1]), false],
         ['Take card payments', stripe_on($S), url('shop') . '#cards', true],
+        ['Notifications on your phone (free)', push_on_for(uid()) > 0, url('shop') . '#push', true],
     ];
 }
 

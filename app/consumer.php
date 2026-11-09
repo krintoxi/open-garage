@@ -104,6 +104,7 @@ function recalls_refresh(int $vehId, bool $force = false): int {
         if (!empty($r['parkIt'])) $park[] = recall_component((string)($r['Component'] ?? ''));
     }
     // A new "do not drive" recall is worth an email straight away (owner's own vehicles, verified accounts only).
+    if ($park && !$first && $v['customer_id'] === null) push_send((int)$v['user_id'], 'Do not drive your ' . vehicle_name($v), 'New safety recall: ' . implode('; ', $park) . '. The repair is free at a dealer.', url('recalls', ['v' => $vehId]), true, 'recall-' . $vehId);
     if ($park && !$first && MULTI_USER && $v['customer_id'] === null && ($u = row('SELECT email, verified_at, is_guest FROM users WHERE id=?', [$v['user_id']])) && $u['verified_at'] && !$u['is_guest'])
         send_mail((string)$u['email'], 'Do not drive your ' . vehicle_name($v) . ': new safety recall', '<div style="font:15px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:520px">'
             . '<p><b>NHTSA just published a "do not drive" safety recall for your ' . h(vehicle_name($v)) . '</b> (' . h(implode('; ', $park)) . ').</p>'

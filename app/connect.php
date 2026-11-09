@@ -79,6 +79,7 @@ function handoff_import(array $ho): int {
     if ($d['codes']) { $all = []; foreach (canned_jobs() as $cj) $all[$cj['name']] = $cj; if (isset($all['Check engine light diagnosis'])) job_add_canned(row('SELECT * FROM jobs WHERE id=?', [$jid]), $all['Check engine light diagnosis'], 'Diagnosis'); }
     job_refresh($jid);
     update('handoffs', ['shop_user_id' => uid(), 'shop_name' => $s['name'] ?: 'Your shop', 'job_id' => $jid, 'imported_at' => now()], (int)$ho['id']);
+    if (!$ho['imported_at']) push_send((int)$ho['user_id'], ($s['name'] ?: 'The shop') . ' got your report', 'They started an estimate for your ' . vehicle_name($v) . '.', url('send_shop'), false, 'handoff-' . $ho['id']);
     return $jid;
 }
 
@@ -131,6 +132,7 @@ function handoff_return(int $jobId): bool {
             'opened_on' => today(), 'from_shop' => $shopName, 'created_at' => now(), 'updated_at' => now()]);
     }
     update('handoffs', ['returned_at' => now(), 'visit_id' => $visitId], (int)$ho['id']);
+    if (!$ho['returned_at']) push_send($driver, $shopName . ' sent your service record', ($job['title'] ?: 'Your service') . ' is in your history, marked verified.' . ($declined ? ' They also recommended: ' . implode(', ', array_keys($declined)) . '.' : ''), url('visits', ['v' => $vid]), false, 'handoff-' . $ho['id']);
     // A short note to the driver (only an address they gave the shop, only once).
     if (!$ho['returned_at'] && filter_var((string)$ho['contact_email'], FILTER_VALIDATE_EMAIL))
         send_mail((string)$ho['contact_email'], $shopName . ' sent your service record', '<div style="font:15px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:520px">'

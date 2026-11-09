@@ -695,3 +695,40 @@ document.querySelectorAll('[data-toggle-target]').forEach(cb => { const t = docu
   }));
   if (forms.length || read().length) { show(); flush(); addEventListener('online', flush); addEventListener('offline', show); }
 })();
+
+// Phone notifications (free Web Push): turn on / off for this device, and send a test.
+document.querySelectorAll('[data-push]').forEach(async card => {
+  const $ = s => card.querySelector(s), st = $('[data-push-state]'), on = $('[data-push-on]'), off = $('[data-push-off]'), test = $('[data-push-test]'), ios = $('[data-push-ios]');
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    st.textContent = isIOS && !standalone ? 'Add the app to your Home Screen first (see below).' : "This browser can't receive notifications. Chrome, Edge, Firefox and Safari (iPhone, from the Home Screen) can.";
+    ios.hidden = !isIOS; return;
+  }
+  const key = s => { const b = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+  const tok = () => (document.querySelector('input[name=_csrf]') || {}).value || '';
+  const send = (action, extra = {}) => { const fd = new FormData(); fd.append('action', action); fd.append('_csrf', tok()); Object.entries(extra).forEach(([k, v]) => fd.append(k, v)); return fetch('index.php', { method: 'POST', body: fd, credentials: 'same-origin' }); };
+  const subFields = sub => { const j = sub.toJSON(); return { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }; };
+  // Some in-app browsers never start the service worker: say so instead of waiting forever.
+  const reg = await Promise.race([navigator.serviceWorker.ready, new Promise(ok => setTimeout(() => ok(null), 5000))]).catch(() => null);
+  if (!reg) { st.textContent = "Notifications aren't available in this browser window. Open the app in Chrome, Edge, Firefox or Safari (on iPhone, from the Home Screen)."; ios.hidden = !isIOS; return; }
+  const sync = async () => {
+    const sub = await reg.pushManager.getSubscription(), blocked = Notification.permission === 'denied';
+    st.textContent = blocked ? 'Notifications are blocked for this site. Allow them in the browser settings (site settings → Notifications).' : sub ? '✅ On for this phone.' : 'Off on this phone.';
+    on.hidden = !!sub || blocked; off.hidden = test.hidden = !sub;
+    if (sub) send('push_subscribe', subFields(sub)).catch(() => {});   // keep the server's copy fresh
+  };
+  on.addEventListener('click', async () => {
+    on.disabled = true;
+    try {
+      if ((await Notification.requestPermission()) === 'granted') {
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(card.dataset.vapid) });
+        const r = await send('push_subscribe', subFields(sub)); if (!r.ok) throw new Error('server ' + r.status);
+      }
+    } catch (e) { st.textContent = "Couldn't turn notifications on here (" + (e.message || e) + ').'; on.disabled = false; return; }
+    on.disabled = false; sync();
+  });
+  off.addEventListener('click', async () => { const sub = await reg.pushManager.getSubscription(); if (sub) { await send('push_unsubscribe', subFields(sub)).catch(() => {}); await sub.unsubscribe(); } sync(); });
+  test.addEventListener('click', async () => { const r = await send('push_test'); const j = await r.json().catch(() => ({})); st.textContent = j.sent ? 'Sent. It should pop up in a few seconds.' : 'Could not deliver to this phone. Turn it off and on again.'; });
+  sync();
+});

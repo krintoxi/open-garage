@@ -44,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST['pay']) && in_array($j
         if ($yes && shop_rules($S)[1]['parts_back']) q('UPDATE jobs SET parts_return=? WHERE id=?', [!empty($_POST['parts_back']) ? 'yes' : 'no', $job['id']]);
         job_refresh((int)$job['id']);
         $done = $yes ? 'yes' : 'no';
+        push_send((int)$job['user_id'], $name . ($yes ? ' approved ' : ' declined ') . $job['est_no'], $yes ? implode(', ', $yes) . ' · ' . money($tot, $S) : 'Nothing approved this time. Declined work goes on your follow-up list.', url('job', ['id' => $job['id']]), false, 'job-' . $job['id']);
         $job = row('SELECT * FROM jobs WHERE id=?', [$job['id']]);
     }
 }

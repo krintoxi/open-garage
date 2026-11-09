@@ -22,6 +22,18 @@ if (in_array($action, CONNECT_ACTIONS, true)) { require APP_ROOT . '/app/actions
 if (in_array($action, FU_ACTIONS, true)) { require APP_ROOT . '/app/actions_followups.php'; exit; }
 if (in_array($action, RET_ACTIONS, true)) { require APP_ROOT . '/app/actions_returns.php'; exit; }
 if (in_array($action, IMPORT_ACTIONS, true)) { require APP_ROOT . '/app/actions_import.php'; exit; }
+if (in_array($action, PUSH_ACTIONS, true)) {
+    // Phone notifications: store / remove this device's push subscription, or send a test.
+    $ep = post('endpoint');
+    if ($action === 'push_subscribe') {
+        if (!preg_match('~^https://[^\s]{10,800}$~', $ep) || strlen(b64u_dec(post('p256dh'))) !== 65 || strlen(b64u_dec(post('auth'))) < 16) { http_response_code(400); exit('Bad subscription'); }
+        if (!rate_ok('push-sub:' . uid(), 30, 86400)) { http_response_code(429); exit; }
+        q('INSERT INTO push_subs (user_id, endpoint, p256dh, auth, ua, created_at, fails) VALUES (?,?,?,?,?,?,0) ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth, fails=0',
+            [uid(), $ep, post('p256dh'), post('auth'), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 160), now()]);
+    } elseif ($action === 'push_unsubscribe') q('DELETE FROM push_subs WHERE user_id=? AND endpoint=?', [uid(), $ep]);
+    else { if (!rate_ok('push-test:' . uid(), 10, 3600)) { http_response_code(429); exit; } $n = push_send(uid(), 'Notifications are on ✅', 'This is how updates from ' . APP_NAME . ' will look.', is_pro() ? url('jobs') : url('dashboard')); header('Content-Type: application/json'); echo json_encode(['sent' => $n]); exit; }
+    http_response_code(204); exit;
+}
 // Everything below works on the current vehicle; a new account has none until it adds one.
 if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set', 'mode_set', 'guest_keep', 'guest_end', 'diag_run', 'diag_delete', 'diag_to_vehicle', 'customer_save', 'customer_delete', 'customer_vehicle_add', 'tool_save', 'tool_preset', 'tool_delete', 'job_new', 'job_save', 'line_add', 'line_save', 'line_delete', 'group_action', 'canned_add', 'job_auth', 'job_stage', 'job_link', 'payment_add', 'payment_delete', 'job_copy', 'job_delete', 'inspect_start', 'inspect_save', 'shop_save', 'canned_save', 'canned_delete', 'catalog_save', 'catalog_delete', 'catalog_import'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
 

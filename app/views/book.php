@@ -28,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'vehicle_text' => $f('vehicle_text', 120), 'vin' => preg_match('/^[A-HJ-NPR-Z0-9]{17}$/', $vin) ? $vin : '', 'plate' => strtoupper($f('plate', 12)), 'waiting' => !empty($_POST['waiting']) ? 1 : 0, 'address' => $f('address', 200),
             'notes' => '', 'seen' => 0, 'created_at' => now(), 'updated_at' => now()]);
         $when = date('l, F j \a\t g:i a', strtotime("$day $time"));
+        push_send($uidShop, 'New booking request', $f('name', 80) . ' · ' . $when . ($f('title', 120) !== '' ? ' · ' . $f('title', 120) : ''), url('calendar'), false, 'booking');
         // Let the shop know (if it has an email on file) and confirm receipt to the customer.
         if (filter_var((string)$S['email'], FILTER_VALIDATE_EMAIL)) send_mail((string)$S['email'], 'New booking request: ' . $when, '<p><b>' . h($f('name', 80)) . '</b> asked for ' . h($when) . '.</p><p>' . h($f('vehicle_text', 120)) . ' · ' . h($f('title', 120)) . '</p>' . ($f('address', 200) !== '' ? '<p>Where: ' . h($f('address', 200)) . '</p>' : '') . '<p>' . nl2br(h($f('concern', 2000))) . '</p><p>Open Appointments in ' . h(APP_NAME) . ' to accept it.</p>');
         if (filter_var($f('email', 120), FILTER_VALIDATE_EMAIL)) send_mail($f('email', 120), 'We received your request: ' . ($S['name'] ?: 'appointment'), '<p>Thanks, ' . h($f('name', 80)) . '. ' . h($S['name'] ?: 'The shop') . ' received your request for ' . h($when) . ' and will confirm it.</p><p>' . h($S['phone']) . '</p>');
@@ -68,4 +69,4 @@ $fmt = fn(string $t) => date('g:i a', strtotime("2000-01-01 $t"));
   </form>
   <?php endif; ?>
 </div>
-<script src="assets/app.js?v=16"></script></body></html>
+<script src="assets/app.js?v=17"></script></body></html>

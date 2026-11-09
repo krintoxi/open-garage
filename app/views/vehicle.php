@@ -63,6 +63,7 @@ $hasPw = (bool)col("SELECT value FROM settings WHERE key='password_hash'");
         <div><b>Weekly reminder email</b><small class="muted"><?= $on ? 'On: one email a week, only when something is due.' : 'Off. Turn it on to get one email a week when service, a recall or a visit is coming up.' ?><?= $on && empty($me['verified_at']) ? ' Confirm your email first (check your inbox).' : '' ?></small></div>
         <button class="sm <?= $on ? 'ghost' : 'primary' ?>" type="submit"><?= $on ? 'Turn off' : 'Turn on' ?></button></form>
       <?php endif; ?>
+      <div id="push" style="margin:14px 0"><?= push_card('Get a ping when your shop sends back your service record or starts your estimate, and right away if a do-not-drive recall is issued.') ?></div>
       <form method="post"><input type="hidden" name="action" value="account_password"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
         <label>Current password</label><input type="password" name="current_password" autocomplete="current-password" required>
         <label>New password (at least 8 characters)</label><input type="password" name="password" autocomplete="new-password" minlength="8" required>

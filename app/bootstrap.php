@@ -78,6 +78,7 @@ require APP_ROOT . '/app/authz.php';
 require APP_ROOT . '/app/compliance.php';
 require APP_ROOT . '/app/fairprice.php';
 require APP_ROOT . '/app/switching.php';
+require APP_ROOT . '/app/push.php';
 
 function db(): PDO {
     static $pdo = null;
@@ -105,6 +106,7 @@ function db(): PDO {
     migrate_comebacks($pdo);
     migrate_switching($pdo);
     migrate_modes($pdo);
+    migrate_push($pdo);
     migrate_driver_extras($pdo);
     $count = (int)$pdo->query('SELECT COUNT(*) FROM vehicle')->fetchColumn();
     if ($count === 0 && !$pdo->query("SELECT 1 FROM settings WHERE key='seeded'")->fetchColumn()) {
