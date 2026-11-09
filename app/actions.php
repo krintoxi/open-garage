@@ -832,6 +832,14 @@ case 'job_comeback':
     flash('Comeback opened and linked to ' . ($o['inv_no'] ? 'invoice ' . $o['inv_no'] : $o['est_no']) . '. Add the work at no charge where the warranty covers it.');
     redirect(url('job', ['id' => $nid]));
 
+case 'partstech_save':
+    $u = mb_substr(post('pt_user'), 0, 120); $k = post('pt_key');
+    $d = ['pt_user' => $u];
+    if ($k !== '') $d['pt_key'] = mb_substr($k, 0, 200);
+    if (post('pt_clear') === '1') $d = ['pt_user' => '', 'pt_key' => ''];
+    shop_save($d);
+    flash(post('pt_clear') === '1' ? 'PartsTech disconnected.' : 'PartsTech details saved.'); redirect(url('shop') . '#partstech');
+
 case 'state_defaults':
     // Taxes, shop supplies and the approval tolerance the shop's state expects (each shown on the settings page).
     $S0 = shop(); [, $f] = shop_rules($S0); $d = [];

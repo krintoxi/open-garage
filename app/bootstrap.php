@@ -48,6 +48,9 @@ foreach ([
     'MAIL_KEY' => '',              // Resend API key for verification / reset emails
     'MAIL_FROM' => '',             // e.g. Garage <hello@example.com>
     'VISION_URL' => '',            // garage-vision service (cut-out, depth, 3D); empty = off
+    'PARTSTECH_PARTNER_ID' => '',  // PartsTech partner credentials (issued after partner approval); empty = parts ordering off
+    'PARTSTECH_PARTNER_KEY' => '',
+    'PARTSTECH_API' => 'https://api.partstech.com',
     'VISION_TOKEN' => '',
     'VISION_MESH' => false,        // experimental single-photo 3D (needs a GPU host with several GB free)
     'LIMIT_VEHICLES' => 10,        // per account (multi-user)
@@ -107,6 +110,7 @@ function db(): PDO {
     migrate_switching($pdo);
     migrate_modes($pdo);
     migrate_push($pdo);
+    migrate_partstech($pdo);
     migrate_driver_extras($pdo);
     $count = (int)$pdo->query('SELECT COUNT(*) FROM vehicle')->fetchColumn();
     if ($count === 0 && !$pdo->query("SELECT 1 FROM settings WHERE key='seeded'")->fetchColumn()) {

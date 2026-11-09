@@ -241,3 +241,20 @@ function signature_img(?string $name): string {
     if (!$f || !str_starts_with($f, realpath(UPLOAD_DIR) . DIRECTORY_SEPARATOR) || !is_file($f)) return '';
     return '<img class="sig-img" alt="Customer signature" src="data:image/png;base64,' . base64_encode((string)file_get_contents($f)) . '">';
 }
+
+/* ---------- PartsTech (parts ordering inside a repair order) ----------
+ * Applied for partner access 2026-11-09 (PartsTech-Partner-API@oeconnection.com). Until PartsTech issues partner
+ * credentials (PARTSTECH_PARTNER_ID / _KEY in config) this only keeps each shop's own PartsTech Username + API Key
+ * (labelled exactly as PartsTech requires; the key is never shown back) and an HTTPS endpoint for PartsTech's cart /
+ * purchase callbacks, which keeps each payload against the shop for per-order accounting only (their API terms forbid
+ * caching catalog data). The punchout session call is written once their current documentation arrives. */
+function migrate_partstech(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS partstech_events (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, job_id INT, action TEXT, session_id TEXT, payload TEXT, received_at TEXT)');
+}
+function partstech_ready(): bool { return PARTSTECH_PARTNER_ID !== '' && PARTSTECH_PARTNER_KEY !== ''; }
+/** The shop's private callback address for PartsTech (made once). */
+function partstech_callback_url(): string {
+    $S = shop(); $t = (string)($S['pt_token'] ?? '');
+    if (!preg_match('/^[a-f0-9]{32}$/', $t)) { $t = bin2hex(random_bytes(16)); shop_save(['pt_token' => $t]); }
+    return base_url() . '/' . url('pt_callback', ['s' => $t]);
+}

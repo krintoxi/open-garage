@@ -91,6 +91,13 @@ $i = fn(string $k) => h((string)$S[$k]);
 </div>
 
 <div class="grid g2" style="margin-top:18px">
+  <form method="post" class="card" id="partstech" style="margin-bottom:18px"><input type="hidden" name="action" value="partstech_save"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
+    <h2>Parts ordering with PartsTech</h2>
+    <?php if (partstech_ready()): ?><p class="muted" style="font-size:13.5px;margin-top:-6px">Search and order from your own suppliers (O'Reilly, NAPA, WorldPac, AutoZone and more) inside a repair order. PartsTech is free for shops: create your account at partstech.com, then copy your username and API key from your PartsTech profile.</p>
+    <?php else: ?><p class="muted" style="font-size:13.5px;margin-top:-6px">Coming soon: we've applied to PartsTech to switch on parts ordering inside repair orders. You can already enter your PartsTech details; until it's live, order on the supplier's site and use <b>Paste a supplier cart</b> on the repair order.</p><?php endif; ?>
+    <div class="form-grid"><div><label>PartsTech Username</label><input type="text" name="pt_user" value="<?= h((string)($S['pt_user'] ?? '')) ?>" autocomplete="off"></div>
+      <div><label>PartsTech API Key</label><input type="password" name="pt_key" placeholder="<?= !empty($S['pt_key']) ? 'saved (enter a new one to replace it)' : 'not your PartsTech password' ?>" autocomplete="new-password"></div></div>
+    <div class="row" style="gap:8px;margin-top:10px"><button class="primary sm">Save</button><?php if (!empty($S['pt_user']) || !empty($S['pt_key'])): ?><button class="sm ghost" name="pt_clear" value="1">Disconnect</button><?php endif; ?></div></form>
   <div id="push" style="margin-bottom:18px"><?= push_card('Get a ping when a customer approves an estimate, books online, pays by card or sends you their car\'s report.') ?></div>
   <form method="post" class="card" id="booking"><input type="hidden" name="action" value="booking_save"><input type="hidden" name="_csrf" value="<?= csrf() ?>">
     <h2>Hours and booking</h2>

@@ -49,6 +49,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(id_scan(post('kind') === 'plate' ? 'plate' : 'vin', $_FILES['photo'] ?? null, mb_substr(post('barcode'), 0, 200), $authed ? '' : 'ip:' . login_ip()), JSON_UNESCAPED_SLASHES);
         exit;
     }
+    // PartsTech cart / purchase callbacks (server to server, JSON): kept per shop for per-order accounting.
+    if (($_GET['p'] ?? '') === 'pt_callback') {
+        header('Content-Type: application/json');
+        $tok = (string)($_GET['s'] ?? '');
+        $shopUid = preg_match('/^[a-f0-9]{32}$/D', $tok) ? (int)col("SELECT user_id FROM shop_profile WHERE json_extract(data, '$.pt_token')=?", [$tok]) : 0;
+        $raw = (string)file_get_contents('php://input', false, null, 0, 1048576);
+        $j = json_decode($raw, true);
+        if (!$shopUid || !is_array($j) || !rate_ok('ptcb:' . $shopUid, 600, 3600)) { http_response_code($shopUid ? 400 : 404); echo json_encode(['status' => 'error']); exit; }
+        $jid = (int)($j['poNumber'] ?? $j['orderId'] ?? $_GET['job'] ?? 0); $jid = $jid && col('SELECT 1 FROM jobs WHERE id=? AND user_id=?', [$jid, $shopUid]) ? $jid : null;
+        insert('partstech_events', ['user_id' => $shopUid, 'job_id' => $jid, 'action' => mb_substr((string)($j['action'] ?? ''), 0, 40), 'session_id' => mb_substr((string)($j['sessionId'] ?? ''), 0, 120), 'payload' => $raw, 'received_at' => now()]);
+        echo json_encode(['status' => 'ok']); exit;
+    }
     // Phone share sheet ("Share -> this app" from a scanner app): the installed web app receives the report here.
     if (($_GET['p'] ?? '') === 'share_in') {
         if (!$authed) redirect(url('login'));

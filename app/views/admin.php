@@ -49,6 +49,7 @@ $open = signups_open();
       <li><div class="grow">Email (Resend)</div><span class="st <?= MAIL_KEY !== '' ? 'st-ok' : 'st-na' ?>"><?= MAIL_KEY !== '' ? 'on' : 'off' ?></span></li>
       <li><div class="grow">Photo reader / showroom (M4 vision)</div><span class="st <?= VISION_URL !== '' ? 'st-ok' : 'st-na' ?>"><?= VISION_URL !== '' ? 'on' : 'off' ?></span></li>
       <li><div class="grow">YouTube in-app videos</div><span class="st <?= YOUTUBE_KEY !== '' ? 'st-ok' : 'st-na' ?>"><?= YOUTUBE_KEY !== '' ? 'on' : 'off (needs a key)' ?></span></li>
+      <li><div class="grow">PartsTech parts ordering</div><span class="st <?= partstech_ready() ? 'st-ok' : 'st-na' ?>"><?= partstech_ready() ? 'on' : 'applied 2026-11-09, waiting for PartsTech' ?></span></li>
       <li><div class="grow">Plate → VIN lookups</div><span class="st <?= plate_lookup_available() ? 'st-ok' : 'st-na' ?>"><?= plate_lookup_available() ? h(PLATE_PROVIDER) : 'uses each account\'s own records (free)' ?></span></li></ul></div>
   </div>
 </div>

@@ -38,6 +38,8 @@ function shop_defaults(): array {
         'comeback_pay' => 'unpaid', 'mm_line' => 1, 'review_url' => '',
         // How the shop works: solo = just the owner (no team screens); mobile = goes to the customer (address, call-out and travel fees, route).
         'solo' => 0, 'mobile' => 0, 'callout_fee' => 0.0, 'mile_rate' => 0.0, 'free_miles' => 0,
+        // PartsTech: the shop's own PartsTech Username + API Key (key never shown back), and its private callback token.
+        'pt_user' => '', 'pt_key' => '', 'pt_token' => '',
     ];
 }
 function shop(?int $userId = null): array {
