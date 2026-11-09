@@ -90,6 +90,7 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
       <div class="form-grid">
         <div class="full"><label>Cause (what you found)</label><textarea name="cause" rows="2"><?= h($job['cause']) ?></textarea></div>
         <div class="full"><label>Correction (what was done)</label><textarea name="correction" rows="2"><?= h($job['correction']) ?></textarea></div>
+        <?php if (!empty(shop()['mobile']) || trim((string)$job['location']) !== ''): ?><div class="full"><label>Service address <?php if (trim((string)$job['location']) !== ''): ?><a href="<?= h(maps_url((string)$job['location'])) ?>" target="_blank" rel="noopener" style="text-transform:none;letter-spacing:0">Directions ↗</a><?php endif; ?></label><input type="text" name="location" value="<?= h((string)$job['location']) ?>" placeholder="Where the car is" autocomplete="street-address"></div><?php endif; ?>
         <div><label>Promised</label><input type="text" name="promised" value="<?= h($job['promised']) ?>" placeholder="e.g. Fri 5 pm"></div><div><label>Replaced parts</label><select name="parts_return"><option value="">Not asked yet</option><option value="yes" <?= $job['parts_return'] === 'yes' ? 'selected' : '' ?>>Customer wants them back</option><option value="no" <?= $job['parts_return'] === 'no' ? 'selected' : '' ?>>Customer does not want them</option></select></div>
         <div class="full"><label>Note to customer (prints on estimate/invoice)</label><textarea name="notes_customer" rows="2"><?= h($job['notes_customer']) ?></textarea></div>
         <div class="full"><label>Internal note (never shown)</label><textarea name="notes_internal" rows="2"><?= h($job['notes_internal']) ?></textarea></div>
@@ -157,6 +158,9 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
 
     <div class="card add-svc" id="add">
       <h2>Add a service</h2>
+      <?php $SM = shop(); if (!empty($SM['mobile'])): ?><div class="row mobile-fees" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <form method="post"><input type="hidden" name="action" value="job_fee"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><input type="hidden" name="type" value="callout"><button class="sm">＋ Call-out fee<?= (float)$SM['callout_fee'] > 0 ? ' (' . money((float)$SM['callout_fee']) . ')' : '' ?></button></form>
+        <form method="post" class="row" style="gap:6px;flex-wrap:nowrap"><input type="hidden" name="action" value="job_fee"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><input type="hidden" name="type" value="travel"><input type="number" name="miles" min="0" step="1" inputmode="numeric" placeholder="Miles" style="width:90px" required><button class="sm">＋ Travel<?= (float)$SM['mile_rate'] > 0 ? ' (' . money((float)$SM['mile_rate']) . '/mi)' : '' ?></button></form></div><?php endif; ?>
       <form method="post" class="row" style="flex-wrap:wrap;gap:8px"><input type="hidden" name="action" value="canned_add"><?= $csrf ?><input type="hidden" name="job_id" value="<?= $jid ?>">
         <select name="canned_id" required style="flex:1;min-width:220px"><option value="">Canned job (typical labor time + parts list)…</option><?php foreach ($cats as $cat => $items): ?><optgroup label="<?= h($cat) ?>"><?php foreach ($items as $cj): $hrs = array_sum(array_map(fn($x) => $x[0] === 'labor' ? (float)$x[2] : 0, json_decode((string)$cj['lines'], true) ?: [])); ?><option value="<?= (int)$cj['id'] ?>"><?= h($cj['name']) ?><?= $hrs ? ' · ' . $hrs . ' h' : '' ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select>
         <button class="primary">Add</button></form>
@@ -252,12 +256,13 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
         <small><?= h($a['by_name'] ?: '—') ?> · <?= h(date('M j, Y g:i a', strtotime((string)$a['at']))) ?><?= $a['contact'] ? ' · ' . h($a['contact']) : '' ?><?= $a['ip'] ? ' · IP ' . h($a['ip']) : '' ?></small>
         <?php if ($a['lines']): ?><small>For: <?= h($a['lines']) ?></small><?php endif; ?>
         <?php if ($a['msg']): ?><details class="auth-msg"><summary>Their message</summary><p><?= nl2br(h($a['msg'])) ?></p></details><?php endif; ?>
-        <?php if ($a['note']): ?><small><?= h($a['note']) ?></small><?php endif; ?></div></li><?php endforeach; ?></ul>
+        <?php if ($a['note']): ?><small><?= h($a['note']) ?></small><?php endif; ?><?= !empty($a['sig']) ? signature_img($a['sig']) : '' ?></div></li><?php endforeach; ?></ul>
       <?php $vers = rows('SELECT ver, total, reason, created_at FROM job_versions WHERE job_id=? ORDER BY ver', [$jid]); if ($vers): ?><p class="muted" style="font-size:12.5px;margin:6px 0">Estimate versions: <?= implode(' · ', array_map(fn($v) => 'v' . (int)$v['ver'] . ' ' . money((float)$v['total']) . ' (' . h(strtolower((string)$v['reason'])) . ', ' . h(date('M j', strtotime((string)$v['created_at']))) . ')', $vers)) ?></p><?php endif; ?>
       <details class="auth-form-wrap"<?= $added ? ' open' : '' ?>><summary class="muted">Record an approval (phone, text, email, in person)</summary>
         <form method="post" data-auth-form><input type="hidden" name="action" value="job_auth"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>">
           <label>How did they approve?</label><select name="method"><?php foreach (AUTH_NEEDS as $k => [$lb, $who, $how]): ?><option value="<?= $k ?>" data-who="<?= h($who) ?>" data-how="<?= h($how) ?>"><?= h($lb) ?></option><?php endforeach; ?></select>
           <label data-who-label>Name of the person who signed</label><input type="text" name="by_name" value="<?= h((string)($C['name'] ?? '')) ?>" required>
+          <div data-sign-row><label>Signature (the customer signs here with a finger)</label><canvas class="sig-pad" data-sig width="640" height="200" aria-label="Signature pad"></canvas><div class="row" style="justify-content:space-between;margin-top:4px"><small class="muted">By signing, the customer approves the work at the prices shown.</small><button type="button" class="sm ghost" data-sig-clear>Clear</button></div><input type="hidden" name="signature"></div>
           <div data-how-row hidden><label data-how-label>Phone number you called</label><input type="text" name="contact" value="<?= h((string)($C['phone'] ?? '')) ?>" data-phone="<?= h((string)($C['phone'] ?? '')) ?>" data-email="<?= h((string)($C['email'] ?? '')) ?>"></div>
           <div data-msg-row hidden><label>Their reply (paste it: it is kept with the repair order)</label><textarea name="msg" rows="2"></textarea></div>
           <label>Amount approved</label><input type="number" step="0.01" name="amount" value="<?= h((string)$tq['total']) ?>">
@@ -276,8 +281,19 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
         <button class="sm primary" style="margin-top:8px">Open a linked comeback</button>
         <p class="muted" style="font-size:12px;margin:6px 0 0">Tracked as rework: it counts in your comeback rate and stays linked to this job and its technician.</p></form></details>
     <?php endif; ?>
+    <?php $SS = shop(); if (!empty($SS['review_url']) && in_array($job['stage'], ['invoiced', 'paid'], true) && ($C['phone'] ?? '') . ($C['email'] ?? '') !== ''): ?>
+    <div class="card review-card" style="margin-top:14px"><h3 style="margin-top:0">⭐ Ask for a review</h3>
+      <p class="muted" style="font-size:13px;margin:0 0 8px"><?= $job['review_asked_at'] ? 'Asked ' . h(date('M j', strtotime((string)$job['review_asked_at']))) . '.' : 'Sends your Google review link from your own phone or email.' ?></p>
+      <div class="row" style="gap:6px;flex-wrap:wrap"><?= review_buttons($job, $SS, $C['phone'] ?? '', $C['email'] ?? '', (string)($C['name'] ?? '')) ?></div></div>
+    <?php endif; ?>
     <div class="card" id="pay" style="margin-top:14px">
       <h2>Payments</h2>
+      <?php if (stripe_on(shop()) && in_array($job['stage'], ['done', 'invoiced'], true) && (float)$job['total'] - (float)$job['paid'] >= 0.5): ?>
+      <details class="pay-qr"<?= !empty(shop()['mobile']) ? ' open' : '' ?>><summary><b>📱 Customer pays on their phone</b></summary>
+        <?php if ($link): ?><div class="pay-qr-box"><div class="ho-qr" data-qr="<?= h($link) ?>"></div><p class="muted" style="font-size:13px">They point their phone camera at this, open the link and pay <?= money((float)$job['total'] - (float)$job['paid']) ?> by card. It shows up here as paid.</p></div>
+        <?php else: ?><form method="post"><input type="hidden" name="action" value="job_link"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>"><button class="sm">Make the payment code</button></form><?php endif; ?>
+      </details>
+      <?php endif; ?>
       <?php if (!$pays): ?><p class="muted" style="font-size:13px">No payments yet<?= in_array($job['stage'], ['estimate', 'approved'], true) ? ' (deposits can be recorded here)' : '' ?>.</p><?php endif; ?>
       <ul class="list"><?php foreach ($pays as $p): ?><li><div class="grow"><span class="t"><?= money((float)$p['amount']) ?> · <?= h(PAY_METHODS[$p['method']] ?? $p['method']) ?></span><small><?= fmt_date($p['paid_on']) ?><?= $p['note'] ? ' · ' . h($p['note']) : '' ?></small></div>
         <form method="post"><input type="hidden" name="action" value="payment_delete"><?= $csrf ?><input type="hidden" name="id" value="<?= (int)$p['id'] ?>"><button class="sm ghost dim" data-confirm="Remove this payment?">×</button></form></li><?php endforeach; ?></ul>

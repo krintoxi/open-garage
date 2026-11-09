@@ -54,3 +54,5 @@ dialog.cam-dlg{border:0;border-radius:16px;padding:14px;width:min(560px,calc(100
 .fair-ok{display:block;color:#15803d;font-size:12px;font-weight:600;margin-top:2px}
 .privacy h1{font-size:24px;line-height:1.25;margin:0 0 8px}.pv-promise{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 18px;margin:18px 0}
 .privacy h2{font-size:17px;margin:22px 0 6px}.privacy ul{padding-left:20px;line-height:1.6}.privacy .btn{display:inline-block;padding:9px 14px;border-radius:9px;border:1px solid #d4d4d8;text-decoration:none;color:#111;font-weight:600}.privacy .btn.primary{background:#e10600;border-color:#e10600;color:#fff}
+.review-ask{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.sig-img{display:block;max-width:240px;height:auto;margin-top:4px;border-bottom:1px solid #999}

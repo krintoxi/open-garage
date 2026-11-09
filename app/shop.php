@@ -35,7 +35,9 @@ function shop_defaults(): array {
         'po_prefix' => 'PO-', 'next_po' => 1001, 'stripe_sk' => '', 'currency_code' => 'usd',
         // State rules (app/compliance.php): which state's paperwork rules apply, EPA ID for disposal fees.
         'state' => '', 'epa_id' => '', 'show_cond' => 0,
-        'comeback_pay' => 'unpaid', 'mm_line' => 1,
+        'comeback_pay' => 'unpaid', 'mm_line' => 1, 'review_url' => '',
+        // How the shop works: solo = just the owner (no team screens); mobile = goes to the customer (address, call-out and travel fees, route).
+        'solo' => 0, 'mobile' => 0, 'callout_fee' => 0.0, 'mile_rate' => 0.0, 'free_miles' => 0,
     ];
 }
 function shop(?int $userId = null): array {

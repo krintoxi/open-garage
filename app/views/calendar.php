@@ -39,6 +39,7 @@ $apptForm = function (?array $a) use ($csrf, $customers, $allVeh, $techList, $S,
           <div><label>Name</label><input type="text" name="name" value="<?= h((string)$v['name']) ?>" autocomplete="off"></div><div><label>Phone</label><input type="tel" name="phone" value="<?= h((string)$v['phone']) ?>"></div>
           <div class="full"><label>Email</label><input type="email" name="email" value="<?= h((string)$v['email']) ?>"></div>
           <div class="full"><?= idscan_widget() ?></div>
+          <?php if (!empty($S['mobile'])): ?><div class="full"><label>Where is the car?</label><input type="text" name="address" value="<?= h((string)($v['address'] ?? '')) ?>" placeholder="Street address, city" autocomplete="street-address"></div><?php endif; ?>
           <div class="full"><label>Vehicle (year make model)</label><input type="text" name="vehicle_text" value="<?= h((string)$v['vehicle_text']) ?>" placeholder="filled in by the scan, or type it"></div>
           <div><label>VIN</label><input type="text" name="vin" value="<?= h((string)$v['vin']) ?>" maxlength="17" class="mono" autocapitalize="characters"></div><div><label>Plate</label><input type="text" name="plate" value="<?= h((string)$v['plate']) ?>" autocapitalize="characters"></div>
           <input type="hidden" name="year"><input type="hidden" name="make"><input type="hidden" name="model">
@@ -64,6 +65,8 @@ $apptForm = function (?array $a) use ($csrf, $customers, $allVeh, $techList, $S,
     <small><?= h($r['vehicle_text'] ?: $r['vin']) ?><?= $r['title'] ? ' · ' . h($r['title']) : '' ?><?= $r['phone'] ? ' · ' . h($r['phone']) : '' ?></small></div>
     <form method="post" class="row" style="gap:4px"><input type="hidden" name="action" value="appt_status"><?= $csrf ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="sm primary" name="to" value="confirmed">Accept</button><button class="sm ghost" name="to" value="cancelled" data-confirm="Decline this request? Let the customer know (call or text) — the app does not message them.">Decline</button></form></li><?php endforeach; ?></ul></div><?php endif; ?>
 
+<?php if (!empty($S['mobile'])): $rd = $view === 'day' ? $day : (($byDay[today()] ?? null) !== null ? today() : $day); $stops = array_values(array_filter($byDay[$rd] ?? [], fn($a) => !in_array($a['status'], ['cancelled', 'no_show'], true) && trim((string)($a['address'] ?? '')) !== ''));
+  if ($stops): ?><a class="callout route-link" href="<?= h(route_url(array_column($stops, 'address'))) ?>" target="_blank" rel="noopener">🗺 <b>Route for <?= h(date('D, M j', strtotime($rd))) ?></b> · <?= count($stops) ?> stop<?= count($stops) === 1 ? '' : 's' ?> in time order, from where you are <span style="margin-left:auto">Open in Maps ↗</span></a><?php endif; endif; ?>
 <div class="grid g3 cal-wrap">
   <div style="grid-column:span <?= $sel ? 2 : 3 ?>">
     <div class="cal <?= $view === 'day' ? 'cal-day' : '' ?>">
@@ -77,7 +80,7 @@ $apptForm = function (?array $a) use ($csrf, $customers, $allVeh, $techList, $S,
             <a class="appt st-<?= h($a['status']) ?> <?= $sel && (int)$sel['id'] === (int)$a['id'] ? 'on' : '' ?>" href="<?= url('calendar', ['d' => $d, 'a' => $a['id']] + ($view === 'day' ? ['view' => 'day'] : [])) ?>" style="--tc:<?= h($a['tcolor'] ?: '#5e667a') ?>">
               <span class="appt-time"><?= h(date('g:i', strtotime((string)$a['starts_at']))) ?><small><?= h(date('a', strtotime((string)$a['starts_at']))) ?> · <?= $a['minutes'] < 60 ? (int)$a['minutes'] . 'm' : hm((int)$a['minutes']) ?></small></span>
               <b><?= h(appt_who($a)) ?><?= $a['waiting'] ? ' <i title="Waiting at the shop">⌛</i>' : '' ?></b>
-              <small><?= h(appt_vehicle($a)) ?></small>
+              <small><?= h(appt_vehicle($a)) ?></small><?php if (!empty($a['address'])): ?><small>📍 <?= h(mb_strimwidth((string)$a['address'], 0, 40, '…')) ?></small><?php endif; ?>
               <?php if ($a['title']): ?><small class="appt-title"><?= h(mb_strimwidth((string)$a['title'], 0, 50, '…')) ?></small><?php endif; ?>
               <span class="appt-foot"><?= $a['tname'] ? h($a['tname']) : '' ?><?php if ($a['status'] !== 'scheduled'): ?> <i class="st st-<?= h($a['status']) ?>"><?= h(APPT_STATUS[$a['status']] ?? '') ?></i><?php endif; ?></span>
             </a>
@@ -97,6 +100,7 @@ $apptForm = function (?array $a) use ($csrf, $customers, $allVeh, $techList, $S,
       <div class="row" style="justify-content:space-between"><h2 style="margin:0"><?= h(appt_who($sel)) ?></h2><a class="btn sm ghost" href="<?= url('calendar', ['d' => $day] + ($view === 'day' ? ['view' => 'day'] : [])) ?>" aria-label="Close">×</a></div>
       <p class="muted" style="margin:4px 0 10px"><?= h(date('l M j, g:i a', strtotime((string)$sel['starts_at']))) ?> · <?= hm((int)$sel['minutes']) ?> h · <span class="st st-<?= h($sel['status']) ?>"><?= h(APPT_STATUS[$sel['status']]) ?></span><?= $sel['source'] === 'online' ? ' · booked online' : '' ?></p>
       <p><?= h(appt_vehicle($sel)) ?><?= $sel['vplate'] || $sel['plate'] ? ' · ' . h((string)($sel['vplate'] ?: $sel['plate'])) : '' ?><?= $sel['vin'] ? '<br><small class="mono">' . h($sel['vin']) . '</small>' : '' ?></p>
+      <?php if (trim((string)($sel['address'] ?? '')) !== ''): ?><p>📍 <?= h((string)$sel['address']) ?> <a class="btn sm" href="<?= h(maps_url((string)$sel['address'])) ?>" target="_blank" rel="noopener">Directions ↗</a></p><?php endif; ?>
       <?php if ($sel['title'] || $sel['concern']): ?><p><b><?= h((string)$sel['title']) ?></b><?= $sel['concern'] ? '<br>' . nl2br(h((string)$sel['concern'])) : '' ?></p><?php endif; ?>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin:10px 0">
         <?php if (in_array($sel['status'], ['requested', 'scheduled', 'confirmed'], true)): ?>

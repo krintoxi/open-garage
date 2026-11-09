@@ -53,13 +53,14 @@ $doc = in_array($job['stage'], ['invoiced', 'paid'], true) ? 'invoice' : 'estima
 $insp = rows('SELECT * FROM job_inspect WHERE job_id=? ORDER BY sort', [$job['id']]);
 $interactive = $pending && $doc === 'estimate';
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
-<title><?= h(($S['name'] ?: APP_NAME) . ' · ' . ($doc === 'invoice' ? 'Invoice ' . ($job['inv_no'] ?: $job['est_no']) : 'Estimate ' . $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=6"></head><body>
+<title><?= h(($S['name'] ?: APP_NAME) . ' · ' . ($doc === 'invoice' ? 'Invoice ' . ($job['inv_no'] ?: $job['est_no']) : 'Estimate ' . $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=7"></head><body>
 <div class="bar"><button type="button" onclick="print()">Print / save as PDF</button></div>
 <div class="page">
   <?php if ($done === 'yes'): ?><div class="notice">Thank you, <?= h((string)$job['approved_by']) ?>. Your approval was sent to <?= h($S['name'] ?: 'the shop') ?>.</div>
   <?php elseif ($done === 'no'): ?><div class="notice warn">Got it: nothing was approved. The shop will contact you.</div>
   <?php elseif ($done === 'payerr'): ?><div class="notice warn">Card payment could not start right now. Please try again, or pay at the shop.</div>
   <?php elseif ($done === 'err'): ?><div class="notice warn">Please type your name and tick the box to approve.</div><?php endif; ?>
+  <?php if (!empty($S['review_url']) && ($job['stage'] === 'paid' || $paidNow !== null)): ?><div class="notice review-ask">Thanks for choosing <?= h($S['name'] ?: 'us') ?>! If you have a minute, a quick review helps a small shop a lot. <a class="btn primary" href="<?= h($S['review_url']) ?>" target="_blank" rel="noopener">⭐ Leave a review</a></div><?php endif; ?>
   <?php if ($paidNow !== null): ?><div class="notice"><b>Payment received<?= $paidNow > 0 ? ': ' . money($paidNow, $S) : '' ?>.</b> Thank you! A receipt comes from Stripe by email.</div><?php endif; ?>
   <?php if ($payable): ?><form method="post" class="pay-box"><input type="hidden" name="t" value="<?= h($t) ?>"><input type="hidden" name="pay" value="1"><div><small class="mut">Balance due</small><br><b><?= money((float)$job['total'] - (float)$job['paid'], $S) ?></b></div><button class="primary">Pay by card</button></form><?php endif; ?>
   <?php if ($interactive): ?><p><b>Please review:</b> untick anything you do not want done, then type your name and press Approve.</p><form method="post"><input type="hidden" name="t" value="<?= h($t) ?>"><?php endif; ?>

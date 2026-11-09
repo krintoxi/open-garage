@@ -74,6 +74,8 @@ followups_sync(); $fuDue = followups_open(null, true);
 if ($fuDue) $todo[] = ['↻', 'Follow up with ' . $plural(count(array_unique(array_column($fuDue, 'customer_id'))), 'customer') . ' on declined work', money((float)array_sum(array_column($fuDue, 'amount'))) . ' of recommended work they said "not now" to. A quick call or text brings some back.', url('followups'), 'Follow up', ''];
 foreach (array_merge($by['approved'] ?? [], $by['shop'] ?? []) as $j) if ($ap = job_added_pending($j)) $todo[] = ['✋', 'Get ' . $who($j) . "'s OK for added work", $j['est_no'] . ': ' . implode(', ', $ap) . '. It cannot be finished or invoiced until they approve it.', url('job', ['id' => $j['id']]) . '#auth', 'Get approval', 'warn'];
 returns_sync(); $RTb = returns_open(); if ($RTb['overdue']) $todo[] = ['↩', 'Send back ' . $plural($RTb['overdue'], 'core or return', 'cores and returns') . ' (overdue)', money($RTb['owed']) . ' of supplier credit is still owed to you. Old parts that are not returned in time lose their credit.', url('purchasing') . '#returns', 'Open', 'warn'];
+if (!empty($S['review_url'])) foreach (rows("SELECT j.*, c.name cname, c.phone cphone, c.email cemail FROM jobs j LEFT JOIN customers c ON c.id=j.customer_id WHERE j.user_id=? AND j.stage IN ('invoiced','paid') AND j.review_asked_at IS NULL AND j.comeback_of IS NULL AND COALESCE(j.paid_at, j.invoiced_at) >= ? AND (COALESCE(c.phone,'')<>'' OR COALESCE(c.email,'')<>'') ORDER BY COALESCE(j.paid_at, j.invoiced_at) DESC LIMIT 3", [uid(), date('Y-m-d', strtotime('-7 days'))]) as $rj)
+    $todo[] = ['⭐', 'Ask ' . ($rj['cname'] ?: 'the customer') . ' for a review', ($rj['inv_no'] ? 'Invoice ' . $rj['inv_no'] : $rj['est_no']) . '. A quick text with your Google link; ask every customer, not just the happy ones.', url('job', ['id' => $rj['id']]), 'Open', '', review_buttons($rj, $S, $rj['cphone'], $rj['cemail'], (string)$rj['cname'])];
 if ($nReq) $todo[] = ['📅', 'Answer ' . ($nReq === 1 ? 'a booking request' : $nReq . ' booking requests'), 'Someone asked for a time online. Accept it, or call to suggest another.', url('calendar'), 'Answer', 'warn'];
 foreach (array_slice($by['done'] ?? [], 0, 3) as $j) $todo[] = ['📞', 'Tell ' . $who($j) . ' the ' . $j['vmo'] . ' is ready', $j['est_no'] . ' · ' . ($j['title'] ?: 'work done') . ($j['cphone'] ? ' · ' . $j['cphone'] : ' · no phone on file') . '. Invoice it at pickup.', url('job', ['id' => $j['id']]), 'Open', '', $contact($j, true)];
 $toOrder = count(parts_to_order());
@@ -122,13 +124,13 @@ if ($doneN < count($req) && empty($S['setup_hidden'])): ?>
 <?php $todayA = appts(today() . ' 00:00', date('Y-m-d', strtotime('+1 day')) . ' 00:00'); $todayA = array_values(array_filter($todayA, fn($x) => !in_array($x['status'], ['cancelled', 'no_show'], true)));
  ?>
 <?php if ($qq === ''): ?>
-<div class="card today-strip">
+<div class="card today-strip<?= !empty($S['solo']) ? ' solo' : '' ?>">
   <div><h3>Today's appointments <a class="muted" href="<?= url('calendar') ?>">Calendar ›</a></h3>
     <?php if (!$todayA): ?><p class="muted" style="margin:0;font-size:13.5px">Nobody booked today. <a href="<?= url('calendar', ['new' => 1]) ?>">Add an appointment</a>.</p><?php endif; ?>
     <div class="today-list"><?php foreach ($todayA as $ta): ?><a href="<?= $ta['job_id'] ? url('job', ['id' => $ta['job_id']]) : url('calendar', ['a' => $ta['id']]) ?>" style="--tc:<?= h($ta['tcolor'] ?: '#5e667a') ?>"><b><?= h(date('g:i', strtotime((string)$ta['starts_at']))) ?></b> <?= h(appt_who($ta)) ?><small><?= h(appt_vehicle($ta)) ?><?= $ta['status'] === 'arrived' ? ' · here now' : '' ?></small></a><?php endforeach; ?></div></div>
-  <div><h3>Who's working <a class="muted" href="<?= url('clock') ?>">Time clock ›</a></h3>
+  <?php if (empty($S['solo'])): ?><div><h3>Who's working <a class="muted" href="<?= url('clock') ?>">Time clock ›</a></h3>
     <?php $seen = []; $any = false; foreach ($onClock as $oc): if (isset($seen[$oc['name']])) continue; $seen[$oc['name']] = 1; $any = true; ?><span class="clock-chip" style="--tc:<?= h($oc['color'] ?: '#5e667a') ?>"><?= h($oc['name']) ?><?= $oc['kind'] === 'job' ? ' · on ' . h((string)col('SELECT est_no FROM jobs WHERE id=?', [$oc['job_id']])) : ' · free' ?></span><?php endforeach; ?>
-    <?php if (!$any): ?><p class="muted" style="margin:0;font-size:13.5px">Nobody clocked in yet.</p><?php endif; ?></div>
+    <?php if (!$any): ?><p class="muted" style="margin:0;font-size:13.5px">Nobody clocked in yet.</p><?php endif; ?></div><?php endif; ?>
 </div>
 <?php endif; ?>
 
@@ -216,7 +218,7 @@ if ($doneN < count($req) && empty($S['setup_hidden'])): ?>
     <div><small>Estimates approved</small><b><?= $sent ? round($won / $sent * 100) . '%' : '—' ?></b><span><?= $sent ? $won . ' of ' . $sent . ' sent' : 'none sent yet' ?></span></div>
   </div>
   <?php $fs = followup_stats(90); if ($fs['total'] > 0): ?><p class="muted sbm-note">Declined work: <?= money($fs['won']) ?> of <?= money($fs['total']) ?> won back in the last 90 days<?= $fs['rate'] !== null ? ' (' . $fs['rate'] . '%)' : '' ?>. <a href="<?= url('followups') ?>">Follow-ups ›</a></p><?php endif; ?>
-  <p class="muted sbm-note">You billed <?= round($hours, 1) ?> labor hours at an average <?= money($hours ? $labor / $hours : 0) ?>/h (your posted rate is <?= money((float)$S['labor_rate']) ?>/h). <a href="<?= url('team') ?>">Team &amp; payroll ›</a> · <a href="<?= url('numbers') ?>">How you compare ›</a></p>
+  <p class="muted sbm-note">You billed <?= round($hours, 1) ?> labor hours at an average <?= money($hours ? $labor / $hours : 0) ?>/h (your posted rate is <?= money((float)$S['labor_rate']) ?>/h). <?= empty($S['solo']) ? '<a href="' . url('team') . '">Team &amp; payroll ›</a> · ' : '' ?><a href="<?= url('numbers') ?>">How you compare ›</a></p>
 </section>
 <?php endif; ?>
 </div>

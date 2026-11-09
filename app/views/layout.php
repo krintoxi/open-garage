@@ -5,15 +5,16 @@ $two = is_two_wheeler($veh);
 $has = fn(string $t) => (int)col("SELECT COUNT(*) FROM $t WHERE " . vw()) > 0;
 $pro = is_pro();
 $hasOwn = (bool)($veh['id'] ?? 0);
+$SOLO = $pro && !empty(shop()['solo']);
 $nav = array_values(array_filter($pro ? [
     ['jobs', 'Shop board', '▦'],
     ['calendar', 'Appointments', '◷'],
     ['followups', 'Follow-ups', '↻'],
     ['customers', 'Customers', '☺'],
-    ['clock', 'Time clock', '⏱'],
+    $SOLO ? null : ['clock', 'Time clock', '⏱'],
     ['diagnose', 'Diagnose codes', '⌁'],
     ['purchasing', 'Parts ordering', '⇩'],
-    ['team', 'Team & payroll', '☷'],
+    $SOLO ? null : ['team', 'Team & payroll', '☷'],
     ['numbers', 'How you compare', '📈'],
     ['import', 'Switch in / out', '⇄'],
     $hasOwn ? ['dashboard', 'Vehicle home', '◈'] : null,
@@ -32,6 +33,7 @@ $nav = array_values(array_filter(array_merge($nav, !$hasOwn ? [['tools', 'My too
     ['visits', 'Mechanic visits', '🔧'],
     ['send_shop', 'Send to a shop', '📤'],
     ['lights', "What's this light?", '💡'],
+    ['obd', 'Read codes (Bluetooth)', '🔌'],
     ['fairprice', 'Is this quote fair?', '⚖'],
     ['privacy', 'Your data & privacy', '🔒'],
     ['tools', 'My tools', '⧉'],
@@ -69,7 +71,7 @@ $f = flash();
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css?v=24">
+<link rel="stylesheet" href="assets/app.css?v=25">
 <?php if ($use3d || !empty($useStage)): ?>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <?php endif; ?>
@@ -134,7 +136,7 @@ $f = flash();
   <?= $pro ? $tab('jobs', '▦', 'Shop', in_array($page, ['jobs', 'job'], true), $newReplies) : $tab('dashboard', '◈', 'Home', $page === 'dashboard') ?>
   <?= $pro ? $tab('calendar', '◷', 'Calendar', $page === 'calendar', $newReq) : $tab('diagnose', '⌁', 'Diagnose', in_array($page, ['diagnose', 'codes'], true)) ?>
   <button type="button" class="tab-add" data-sheet-open="quick" aria-label="Quick add"><span>＋</span></button>
-  <?= $pro ? $tab('clock', '⏱', 'Clock', $page === 'clock') : $tab('maintenance', '⟳', 'Service', in_array($page, ['maintenance', 'visits', 'visit', 'visit_form'], true)) ?>
+  <?= $pro ? ($SOLO ? $tab('customers', '☺', 'Customers', $page === 'customers') : $tab('clock', '⏱', 'Clock', $page === 'clock')) : $tab('maintenance', '⟳', 'Service', in_array($page, ['maintenance', 'visits', 'visit', 'visit_form'], true)) ?>
   <button type="button" class="<?= in_array($page, array_merge(array_column($more, 0), ['garage', 'vehicle']), true) ? 'on' : '' ?>" data-sheet-open="menu"><span class="ti">☰<?= $recallCount ? '<i>' . $recallCount . '</i>' : '' ?></span>Menu</button>
 </nav>
 <dialog class="sheet" id="sheet-quick" aria-label="Quick add">
@@ -183,7 +185,7 @@ $f = flash();
 </dialog>
 <?php endif; ?>
 <div id="lightbox" class="lightbox" hidden><img alt=""><button type="button" aria-label="Close">×</button></div>
-<script src="assets/app.js?v=15"></script>
+<script src="assets/app.js?v=16"></script>
 <?php if ($use3d): ?><script type="module" src="assets/car3d.js?v=10"></script><?php endif; ?>
 <?php if (!empty($useStage)): ?><script type="module" src="assets/showroom.js?v=4"></script><?php endif; ?>
 </body>

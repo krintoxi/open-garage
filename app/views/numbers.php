@@ -62,3 +62,12 @@ foreach ($K as [$lb, $txt, $v, $avg, $top, $up, $def, $src, $fmt]): [$cls, $word
 <?php endforeach; ?>
 </div>
 <p class="muted" style="font-size:12.5px;margin-top:12px">Benchmarks are US averages for independent shops (Tekmetric Shop Index covers 10,000+ shops through September 2026). Your mix of work, region and shop size matters more than any single number. Technician numbers need the time clock.</p>
+<section class="card" style="margin-top:18px" id="accounting"><h2>Send to your bookkeeper</h2>
+  <p class="muted" style="margin-top:-6px">Files QuickBooks Online and Xero can import, for <?= h(period_range($per === '90' ? '90' : ($per === 'last' ? 'last' : 'month'))[2]) ?>. <a href="<?= url('numbers', ['per' => $per]) ?>#accounting">Change the period</a> with the buttons at the top.</p>
+  <div class="acct-btns"><?php foreach (ACCT_KINDS as $k => $lb): ?><a class="btn sm" href="<?= url('acct_csv', ['kind' => $k, 'per' => $per]) ?>">⬇ <?= h($lb) ?></a><?php endforeach; ?></div>
+  <details style="margin-top:10px"><summary class="muted">How to import</summary><ul class="fp-ask">
+    <li><b>QuickBooks Online:</b> create four products/services once (Labor, Parts, Fees, Sublet; add Core charge and Discount if you use them). Then ⚙ Settings → Import data → Customers (first time), then Invoices. Check the column matches when QuickBooks asks. QuickBooks works out sales tax itself from TAX / NON on each line; compare a few totals the first time.</li>
+    <li><b>Xero:</b> Business → Invoices → Import, upload the file. Lines go to account 200 (Sales) with "Tax on Sales" or "Tax Exempt"; change those in the file if your chart of accounts differs.</li>
+    <li><b>Payments</b> help match bank deposits; the <b>sales summary</b> has one line per invoice with labor, parts, tax, cost and profit for any accountant.</li></ul></details>
+</section>
+

@@ -11,7 +11,7 @@ $colors = ['red' => 'Red: act now', 'amber' => 'Amber: get it checked', 'green' 
 $lightCard = function (string $k) use ($hasVeh): string {
     [$name, $emo, $col, $v, $mean, $todo] = DASH_LIGHTS[$k];
     $acts = [];
-    if ($k === 'check_engine') $acts[] = '<a class="btn sm primary" href="' . url('diagnose') . '">Look up the code</a>';
+    if ($k === 'check_engine') { $acts[] = '<a class="btn sm primary" href="' . url('diagnose') . '">Look up the code</a>'; $acts[] = '<a class="btn sm" href="' . url('obd') . '">🔌 Read it with a Bluetooth adapter</a>'; }
     if ($hasVeh && $v !== 'watch') { $acts[] = '<a class="btn sm" href="' . url('issue_form', ['prefill' => $name . ' light on']) . '">Note it as a problem</a>'; $acts[] = '<a class="btn sm" href="' . url('send_shop') . '">📤 Send to a shop</a>'; }
     if (in_array($k, ['airbag', 'brake', 'abs'], true) && $hasVeh) $acts[] = '<a class="btn sm ghost" href="' . url('recalls') . '">Check recalls</a>';
     return '<section class="card light-card light-' . h($col) . '"><div class="lc-head"><span class="lc-emo" aria-hidden="true">' . $emo . '</span><div><h2>' . h($name) . '</h2><small>Usually ' . h($col) . '</small></div></div>'

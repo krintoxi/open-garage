@@ -165,6 +165,14 @@ if ($page === 'board_ver') {
     session_write_close(); header('Content-Type: application/json'); header('Cache-Control: no-store');
     echo json_encode(['v' => board_version()]); exit;
 }
+if ($page === 'acct_csv') {
+    $kind = isset(ACCT_KINDS[$_GET['kind'] ?? '']) ? (string)$_GET['kind'] : 'summary';
+    [$from, $to] = period_range((string)($_GET['per'] ?? 'month'));
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . str_replace('_', '-', $kind) . '-' . $from . '-to-' . date('Y-m-d', strtotime($to . ' -1 day')) . '.csv"');
+    acct_csv($kind, $from, $to);
+    exit;
+}
 if ($page === 'team_csv') {
     $_GET['period'] ??= 'week';
     $monday = strtotime('monday this week'); $period = (string)$_GET['period'];
@@ -188,7 +196,7 @@ if ($page === 'vin') {
 }
 
 $pages = ['dashboard','issues','issue','issue_form','codes','common','maintenance','inspections','inspection_new','inspection',
-          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share','diagnose','customers','tools','jobs','job','shop','job_print','calendar','clock','team','purchasing','po','po_print','admin','send_shop','lights','bulletins','followups','fairprice','numbers','import'];
+          'visits','visit','visit_form','parts','photos','vehicle','brief','mileage','links','login','export','specs','manual','garage','recalls','share','diagnose','customers','tools','jobs','job','shop','job_print','calendar','clock','team','purchasing','po','po_print','admin','send_shop','lights','bulletins','followups','fairprice','numbers','import','obd'];
 if (!in_array($page, $pages, true)) { http_response_code(404); $page = 'dashboard'; }
 
 if ($page === 'export' && MULTI_USER && isset($_GET['zip']) && class_exists('ZipArchive')) {
@@ -217,7 +225,7 @@ if ($page === 'export') {
 // A page about one record (an issue, a visit...) shows that record's vehicle, even if another vehicle was selected.
 // No vehicle yet (fresh install): everything starts at the Garage page's "Add a vehicle" form.
 if (!vid() && is_pro() && $page === 'dashboard') redirect(url('jobs'));
-if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links', 'diagnose', 'customers', 'tools', 'jobs', 'job', 'shop', 'job_print', 'calendar', 'clock', 'team', 'purchasing', 'po', 'po_print', 'admin', 'lights', 'bulletins', 'followups', 'fairprice', 'numbers', 'import'], true)) redirect(url('garage') . '#add');
+if (!vid() && !in_array($page, ['garage', 'login', 'export', 'links', 'diagnose', 'customers', 'tools', 'jobs', 'job', 'shop', 'job_print', 'calendar', 'clock', 'team', 'purchasing', 'po', 'po_print', 'admin', 'lights', 'bulletins', 'followups', 'fairprice', 'numbers', 'import', 'obd'], true)) redirect(url('garage') . '#add');
 $follow = ['issue' => 'issues', 'issue_form' => 'issues', 'visit' => 'visits', 'visit_form' => 'visits', 'inspection' => 'inspections', 'brief' => 'visits'];
 if (isset($follow[$page]) && ($rid = (int)($_GET['id'] ?? 0))) {
     if (!owns($follow[$page], $rid)) { http_response_code(404); $page = 'garage'; }

@@ -3,7 +3,7 @@
 if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 $signedIn = !empty($authed);
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Your data · <?= h(APP_NAME) ?></title><link rel="stylesheet" href="assets/doc.css?v=6"></head><body>
+<title>Your data · <?= h(APP_NAME) ?></title><link rel="stylesheet" href="assets/doc.css?v=7"></head><body>
 <div class="page privacy">
   <header class="doc-head"><div><b class="shop-name"><?= h(APP_NAME) ?></b><p class="mut" style="margin:4px 0 0">Your data, in plain words</p></div><div class="doc-id"><b>🔒 Privacy</b><small>Updated <?= h(date('M j, Y', filemtime(__FILE__))) ?></small></div></header>
   <section class="pv-promise"><h1>We never sell your data or share it with insurers, data brokers or advertisers.</h1>

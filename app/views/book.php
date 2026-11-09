@@ -20,22 +20,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif (!rate_ok('book:' . $ip, 5, 86400)) $err = 'Too many bookings from this network today. Please call the shop.';
     elseif ($f('name', 80) === '' || ($f('phone', 40) === '' && !filter_var($f('email', 120), FILTER_VALIDATE_EMAIL))) $err = 'Please give your name and a phone number or email.';
     elseif (!$day || !in_array($time, $days[$day] ?? [], true)) $err = 'That time is no longer free. Pick another.';
+    elseif (!empty($S['mobile']) && $f('address', 200) === '') $err = 'Tell us where the car is.';
     else {
         $vin = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $f('vin', 20)));
         insert('appointments', ['user_id' => $uidShop, 'starts_at' => "$day $time", 'minutes' => (int)$S['slot_min'], 'title' => $f('title', 120), 'concern' => $f('concern', 2000),
             'status' => 'requested', 'source' => 'online', 'name' => $f('name', 80), 'phone' => $f('phone', 40), 'email' => filter_var($f('email', 120), FILTER_VALIDATE_EMAIL) ? $f('email', 120) : '',
-            'vehicle_text' => $f('vehicle_text', 120), 'vin' => preg_match('/^[A-HJ-NPR-Z0-9]{17}$/', $vin) ? $vin : '', 'plate' => strtoupper($f('plate', 12)), 'waiting' => !empty($_POST['waiting']) ? 1 : 0,
+            'vehicle_text' => $f('vehicle_text', 120), 'vin' => preg_match('/^[A-HJ-NPR-Z0-9]{17}$/', $vin) ? $vin : '', 'plate' => strtoupper($f('plate', 12)), 'waiting' => !empty($_POST['waiting']) ? 1 : 0, 'address' => $f('address', 200),
             'notes' => '', 'seen' => 0, 'created_at' => now(), 'updated_at' => now()]);
         $when = date('l, F j \a\t g:i a', strtotime("$day $time"));
         // Let the shop know (if it has an email on file) and confirm receipt to the customer.
-        if (filter_var((string)$S['email'], FILTER_VALIDATE_EMAIL)) send_mail((string)$S['email'], 'New booking request: ' . $when, '<p><b>' . h($f('name', 80)) . '</b> asked for ' . h($when) . '.</p><p>' . h($f('vehicle_text', 120)) . ' · ' . h($f('title', 120)) . '</p><p>' . nl2br(h($f('concern', 2000))) . '</p><p>Open Appointments in ' . h(APP_NAME) . ' to accept it.</p>');
+        if (filter_var((string)$S['email'], FILTER_VALIDATE_EMAIL)) send_mail((string)$S['email'], 'New booking request: ' . $when, '<p><b>' . h($f('name', 80)) . '</b> asked for ' . h($when) . '.</p><p>' . h($f('vehicle_text', 120)) . ' · ' . h($f('title', 120)) . '</p>' . ($f('address', 200) !== '' ? '<p>Where: ' . h($f('address', 200)) . '</p>' : '') . '<p>' . nl2br(h($f('concern', 2000))) . '</p><p>Open Appointments in ' . h(APP_NAME) . ' to accept it.</p>');
         if (filter_var($f('email', 120), FILTER_VALIDATE_EMAIL)) send_mail($f('email', 120), 'We received your request: ' . ($S['name'] ?: 'appointment'), '<p>Thanks, ' . h($f('name', 80)) . '. ' . h($S['name'] ?: 'The shop') . ' received your request for ' . h($when) . ' and will confirm it.</p><p>' . h($S['phone']) . '</p>');
         $done = $when;
     }
 }
 $fmt = fn(string $t) => date('g:i a', strtotime("2000-01-01 $t"));
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
-<title>Book with <?= h($S['name'] ?: APP_NAME) ?></title><link rel="stylesheet" href="assets/doc.css?v=6"></head><body>
+<title>Book with <?= h($S['name'] ?: APP_NAME) ?></title><link rel="stylesheet" href="assets/doc.css?v=7"></head><body>
 <div class="page book">
   <header class="doc-head"><div><b class="shop-name"><?= h($S['name'] ?: 'Book a service') ?></b><p class="mut" style="margin:4px 0 0"><?= h(implode(' · ', array_filter([$S['address'], $S['phone']]))) ?></p></div>
     <div class="doc-id"><b>Book online</b><small><?= h(implode(', ', array_map(fn($d, $hh) => WEEKDAYS[$d] . ' ' . date('g', strtotime($hh[0])) . '–' . date('ga', strtotime($hh[1])), array_keys(array_filter(shop_hours($S))), array_filter(shop_hours($S))))) ?></small></div></header>
@@ -53,6 +54,7 @@ $fmt = fn(string $t) => date('g:i a', strtotime("2000-01-01 $t"));
     <?php else: ?><p class="mut">No free times on this day. Pick another day<?= $S['phone'] ? ' or call ' . h($S['phone']) : '' ?>.</p><?php endif; ?>
     <label>What do you need?</label><input type="text" name="title" maxlength="120" placeholder="e.g. Oil change, brakes squeal, check engine light" value="<?= h((string)($_POST['title'] ?? '')) ?>">
     <label>Tell us more (optional)</label><textarea name="concern" rows="3" maxlength="2000"><?= h((string)($_POST['concern'] ?? '')) ?></textarea>
+    <?php if (!empty($S['mobile'])): ?><label>Where is the car? (we come to you)</label><input type="text" name="address" maxlength="200" required autocomplete="street-address" placeholder="Street address, city" value="<?= h((string)($_POST['address'] ?? '')) ?>"><?php endif; ?>
     <label>Your vehicle</label>
     <?= idscan_widget($tok) ?>
     <input type="text" name="vehicle_text" maxlength="120" placeholder="Year, make and model (filled in by the scan, or type it)" value="<?= h((string)($_POST['vehicle_text'] ?? '')) ?>">
@@ -60,10 +62,10 @@ $fmt = fn(string $t) => date('g:i a', strtotime("2000-01-01 $t"));
     <input type="hidden" name="year"><input type="hidden" name="make"><input type="hidden" name="model">
     <div class="two"><div><label>Your name</label><input type="text" name="name" maxlength="80" autocomplete="name" required value="<?= h((string)($_POST['name'] ?? '')) ?>"></div><div><label>Phone</label><input type="tel" name="phone" maxlength="40" autocomplete="tel" value="<?= h((string)($_POST['phone'] ?? '')) ?>"></div></div>
     <label>Email (for the confirmation)</label><input type="email" name="email" maxlength="120" autocomplete="email" value="<?= h((string)($_POST['email'] ?? '')) ?>">
-    <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" name="waiting" value="1"> I'll wait at the shop</label>
+    <?php if (empty($S['mobile'])): ?><label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" name="waiting" value="1"> I'll wait at the shop</label><?php endif; ?>
     <div style="margin-top:16px"><button class="primary" <?= $day && $days[$day] ? '' : 'disabled' ?>>Request this time</button></div>
     <p class="mut" style="font-size:12.5px;margin-top:12px">Your details go only to <?= h($S['name'] ?: 'this shop') ?> to handle the booking.</p>
   </form>
   <?php endif; ?>
 </div>
-<script src="assets/app.js?v=15"></script></body></html>
+<script src="assets/app.js?v=16"></script></body></html>

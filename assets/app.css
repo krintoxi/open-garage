@@ -713,3 +713,15 @@ body.auth .login{align-items:flex-start;padding-top:min(10vh,90px)}
 .seg{display:inline-flex;border:1px solid var(--border2);border-radius:10px;overflow:hidden}.seg button{border:0;border-radius:0;background:none;padding:8px 14px}.seg button.on{background:var(--accent);color:#fff}
 .ds-guess{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px;color:var(--silver);flex:1 1 100%;margin:0}
 .ds-streak{display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid rgba(245,158,11,.45);font-size:13px;color:#fcd34d}
+
+/* ---------- Bluetooth OBD reader ---------- */
+.obd-go{font-size:16px;padding:12px 18px}.obd-log{margin:12px 0 0;padding-left:20px;color:var(--muted);font-size:13.5px;line-height:1.6}
+.obd-result{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}.obd-mil{font-weight:700;font-size:17px;margin-bottom:8px}.obd-mil.on{color:#fcd34d}.obd-mil.off{color:#86efac}
+.obd-result .code.pending{opacity:.75;border-style:dashed}
+.acct-btns{display:flex;flex-wrap:wrap;gap:8px}
+.today-strip.solo{grid-template-columns:1fr}
+.sig-pad{display:block;width:100%;max-width:640px;height:auto;aspect-ratio:16/5;background:#fff;border-radius:10px;border:1px solid var(--border2);touch-action:none;cursor:crosshair}
+.sig-img{display:block;max-width:240px;height:auto;background:#fff;border-radius:6px;margin-top:6px;border:1px solid var(--border)}
+.route-link{margin-bottom:12px}.mobile-fees form{margin:0}
+.pay-qr{margin:0 0 12px}.pay-qr-box{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px}.pay-qr-box p{flex:1 1 180px;margin:0}
+.offline-q{border-color:rgba(245,158,11,.55)!important;background:rgba(245,158,11,.1)!important}

@@ -452,7 +452,13 @@ case 'diag_run':
         $vj = ['year' => post_int('year'), 'make' => post('make'), 'model' => post('model'), 'engine' => post('engine'), 'vin' => strtoupper(post('vin')), 'trim' => post('trim'), 'country' => post('country')];
         $vehId = null;
     }
-    $text = post('codes') . "\n" . post('freeze'); $src = 'typed';
+    $text = post('codes') . "\n" . post('freeze'); $src = post('source') === 'bluetooth' ? 'bluetooth adapter' : 'typed';
+    if ($vehId && post('source') === 'bluetooth') {
+        $bv = strtoupper(post('vin_read'));
+        if (preg_match('/^[A-HJ-NPR-Z0-9]{17}$/', $bv) && !col("SELECT 1 FROM vehicle WHERE id=? AND vin<>''", [$vehId])) update('vehicle', ['vin' => $bv], $vehId);
+        $bo = post_int('odo_read') ?? 0;
+        if ($bo > (int)col('SELECT mileage FROM vehicle WHERE id=?', [$vehId]) && $bo < 2000000) { update('vehicle', ['mileage' => $bo, 'mileage_updated' => today()], $vehId); insert('mileage_log', ['vehicle_id' => $vehId, 'logged_at' => today(), 'miles' => $bo, 'note' => 'Read by the OBD adapter']); }
+    }
     if (!empty($_FILES['scan']['name'])) {
         $up = scan_upload_text($_FILES['scan']);
         if (!empty($up['error'])) flash($up['error'], 'err');
@@ -584,6 +590,7 @@ case 'job_save':
     $d = [];
     foreach (['title', 'complaint', 'cause', 'correction', 'promised', 'notes_customer', 'notes_internal'] as $k) $d[$k] = post($k);
     $d['parts_return'] = in_array(post('parts_return'), ['yes', 'no'], true) ? post('parts_return') : null;
+    if (isset($_POST['location'])) $d['location'] = mb_substr(post('location'), 0, 200);
     foreach (['odometer_in', 'odometer_out'] as $k) $d[$k] = post_int($k);
     foreach (['discount', 'labor_rate', 'tax_parts', 'tax_labor', 'supplies_pct', 'supplies_cap'] as $k) $d[$k] = post_float($k) ?? 0;
     $cid = post_int('customer_id') ?? 0; $d['customer_id'] = owns_row('customers', $cid) ? $cid : null;
@@ -664,7 +671,8 @@ case 'job_auth':
     $ver = job_snapshot((int)$id, 'Approved ' . strtolower(AUTH_NEEDS[$method][0]));
     if ($newly) q("UPDATE job_lines SET status='approved' WHERE job_id=? AND status='pending'", [$id]);
     $amt = post_float('amount') ?? job_totals($job, job_lines((int)$id), 'approved')['total'];
-    insert('job_auth', ['job_id' => $id, 'amount' => $amt, 'method' => $method, 'by_name' => post('by_name'), 'contact' => $contact, 'msg' => $msg, 'ver' => $ver, 'lines' => mb_substr(implode(', ', $newly), 0, 500), 'note' => post('note'), 'at' => now()]);
+    $sig = $method === 'in_person' && post('signature') !== '' ? save_signature(post('signature'), (int)$id) : '';
+    insert('job_auth', ['job_id' => $id, 'amount' => $amt, 'method' => $method, 'by_name' => post('by_name'), 'contact' => $contact, 'msg' => $msg, 'ver' => $ver, 'lines' => mb_substr(implode(', ', $newly), 0, 500), 'note' => post('note'), 'sig' => $sig ?: null, 'at' => now()]);
     if (in_array($job['stage'], ['estimate', 'declined'], true)) q("UPDATE jobs SET stage='approved', approved_at=?, approved_by=? WHERE id=?", [now(), post('by_name'), $id]);
     job_refresh((int)$id);
     flash('Authorization recorded: ' . money($amt) . '.'); redirect(url('job', ['id' => $id]));
@@ -767,6 +775,9 @@ case 'shop_save':
     foreach (['name', 'address', 'phone', 'email', 'website', 'license', 'tax_id', 'currency', 'est_prefix', 'inv_prefix', 'po_prefix', 'warranty', 'est_terms', 'inv_terms', 'epa_id'] as $k) $d[$k] = post($k);
     $d['state'] = array_key_exists(post('state'), US_STATES) ? post('state') : ''; $d['show_cond'] = post('show_cond') === '1' ? 1 : 0;
     $d['comeback_pay'] = array_key_exists(post('comeback_pay'), COMEBACK_PAY) ? post('comeback_pay') : 'unpaid'; $d['mm_line'] = post('mm_line') === '1' ? 1 : 0;
+    $d['solo'] = post('solo') === '1' ? 1 : 0; $d['mobile'] = post('mobile') === '1' ? 1 : 0;
+    $d['callout_fee'] = max(0, post_float('callout_fee') ?? 0); $d['mile_rate'] = max(0, post_float('mile_rate') ?? 0); $d['free_miles'] = max(0, post_int('free_miles') ?? 0);
+    $d['review_url'] = preg_match('~^https://[^\s"<>]{8,300}$~', post('review_url')) ? post('review_url') : '';
     foreach (['labor_rate', 'tax_parts', 'tax_labor', 'tax_fees', 'supplies_pct', 'supplies_cap', 'auth_threshold_pct', 'auth_threshold_amt'] as $k) $d[$k] = post_float($k) ?? 0;
     foreach (['next_est', 'next_inv', 'next_po'] as $k) if (post_int($k)) $d[$k] = post_int($k);
     $d['show_rates'] = post('show_rates') === '1' ? 1 : 0; $d['show_part_numbers'] = post('show_part_numbers') === '1' ? 1 : 0;
@@ -775,6 +786,26 @@ case 'shop_save':
     if ($m) { usort($m, fn($a, $b) => $a[0] <=> $b[0]); $d['matrix'] = $m; }
     shop_save($d);
     flash('Shop settings saved.'); redirect(url('shop'));
+
+case 'job_fee':
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $s = shop(); $sort = (int)col('SELECT COALESCE(MAX(sort),0)+1 FROM job_lines WHERE job_id=?', [$id]);
+    if (post('type') === 'travel') {
+        $mi = max(0, (int)round((float)post('miles'))); $bill = max(0, $mi - (int)$s['free_miles']);
+        if ($bill <= 0 || (float)$s['mile_rate'] <= 0) { flash($mi ? 'Within your free miles: no travel charge.' : 'Enter the miles.', $mi ? 'ok' : 'err'); redirect(url('job', ['id' => $id]) . '#add'); }
+        insert('job_lines', ['job_id' => $id, 'grp' => 'Call-out and travel', 'kind' => 'fee', 'description' => 'Travel: ' . $mi . ' miles' . ((int)$s['free_miles'] ? ' (first ' . (int)$s['free_miles'] . ' free)' : ''), 'qty' => $bill, 'cost' => 0, 'price' => (float)$s['mile_rate'], 'taxable' => 0, 'status' => 'pending', 'pstatus' => 'quoted', 'sort' => $sort]);
+    } else {
+        if ((float)$s['callout_fee'] <= 0) { flash('Set your call-out fee in Shop settings first.', 'err'); redirect(url('shop') . '#mode'); }
+        insert('job_lines', ['job_id' => $id, 'grp' => 'Call-out and travel', 'kind' => 'fee', 'description' => 'Call-out fee', 'qty' => 1, 'cost' => 0, 'price' => (float)$s['callout_fee'], 'taxable' => 0, 'status' => 'pending', 'pstatus' => 'quoted', 'sort' => $sort]);
+    }
+    job_refresh((int)$id);
+    redirect(url('job', ['id' => $id]) . '#g-' . rawurlencode('Call-out and travel'));
+
+case 'review_asked':
+    // Tapping Text / Email on a review request marks it as asked (in the background).
+    if (owns_row('jobs', (int)$id)) q('UPDATE jobs SET review_asked_at=? WHERE id=?', [now(), (int)$id]);
+    if (post('ajax') === '1') { http_response_code(204); exit; }
+    redirect(url('job', ['id' => (int)$id]));
 
 case 'job_comeback':
     // The car came back for the same work: a new repair order linked to the original, with the reason.

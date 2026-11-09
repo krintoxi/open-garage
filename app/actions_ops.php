@@ -23,7 +23,7 @@ case 'appt_save':
     $d = ['starts_at' => $start, 'minutes' => max(15, min(600, post_int('minutes') ?? (int)$S['slot_min'])), 'customer_id' => $cid, 'vehicle_id' => $vehId, 'tech_id' => $tid, 'job_id' => $jid,
         'title' => mb_substr(post('title'), 0, 120), 'concern' => mb_substr(post('concern'), 0, 2000), 'name' => mb_substr(post('name'), 0, 80), 'phone' => mb_substr(post('phone'), 0, 40),
         'email' => mb_substr(post('email'), 0, 120), 'vehicle_text' => mb_substr(post('vehicle_text'), 0, 120), 'vin' => strtoupper(mb_substr(preg_replace('/[^A-Za-z0-9]/', '', post('vin')), 0, 17)),
-        'plate' => strtoupper(mb_substr(post('plate'), 0, 12)), 'waiting' => post('waiting') === '1' ? 1 : 0, 'notes' => mb_substr(post('notes'), 0, 2000), 'updated_at' => now()];
+        'plate' => strtoupper(mb_substr(post('plate'), 0, 12)), 'waiting' => post('waiting') === '1' ? 1 : 0, 'notes' => mb_substr(post('notes'), 0, 2000), 'address' => mb_substr(post('address'), 0, 200), 'updated_at' => now()];
     if (array_key_exists(post('status'), APPT_STATUS)) $d['status'] = post('status');
     if ($id) { update('appointments', $d, (int)$id); $aid = (int)$id; }
     else $aid = insert('appointments', $d + ['user_id' => uid(), 'status' => $d['status'] ?? 'scheduled', 'source' => 'shop', 'created_at' => now()]);
@@ -93,13 +93,19 @@ case 'clock_punch':
     if (!owns_row('techs', $tid)) $nf();
     $t = row('SELECT * FROM techs WHERE id=?', [$tid]);
     $back = post('back') === 'job' && post_int('job_id') ? url('job', ['id' => post_int('job_id')]) . '#clock' : url('clock');
+    $ajax = post('ajax') === '1';
+    $fail = function (string $m, int $code = 403) use ($ajax, $back): never { if ($ajax) { http_response_code($code); header('Content-Type: application/json'); echo json_encode(['error' => $m]); exit; } flash($m, 'err'); redirect($back); };
     if ($t['pin_hash'] && post('from_owner') !== '1') {
-        if (!rate_ok('pin:' . $tid, 8, 900, false)) { flash('Too many wrong PINs. Wait 15 minutes.', 'err'); redirect($back); }
-        if (!password_verify(post('pin'), (string)$t['pin_hash'])) { rate_ok('pin:' . $tid, 8, 900); flash('Wrong PIN for ' . $t['name'] . '.', 'err'); redirect($back); }
+        if (!rate_ok('pin:' . $tid, 8, 900, false)) $fail('Too many wrong PINs. Wait 15 minutes.', 429);
+        if (!password_verify(post('pin'), (string)$t['pin_hash'])) { rate_ok('pin:' . $tid, 8, 900); $fail('Wrong PIN for ' . $t['name'] . '.'); }
     }
     $what = post('what');
     if (!in_array($what, ['shift_in', 'shift_out', 'job_start', 'job_stop'], true)) $nf();
-    flash(clock_punch($t, $what, post_int('job_id'), post('grp')));
+    // Tapped while offline and sent later: keep the real time (within the last 12 hours).
+    $at = post_int('at'); $at = $at && $at > time() - 12 * 3600 && $at <= time() + 60 ? min($at, time()) : null;
+    $msg = clock_punch($t, $what, post_int('job_id'), post('grp'), $at);
+    if ($ajax) { header('Content-Type: application/json'); echo json_encode(['ok' => true, 'msg' => $msg]); exit; }
+    flash($msg);
     redirect($back);
 
 case 'time_save':

@@ -16,6 +16,7 @@ function is_guest(): bool { return MULTI_USER && (bool)(current_user()['is_guest
 /** Delete one account and everything in it (also used for expired guests). */
 function account_wipe(int $userId): void {
     foreach (rows('SELECT id FROM vehicle WHERE user_id=?', [$userId]) as $dv) delete_vehicle((int)$dv['id']);
+    foreach (rows("SELECT a.sig FROM job_auth a JOIN jobs j ON j.id=a.job_id WHERE j.user_id=? AND COALESCE(a.sig,'')<>''", [$userId]) as $sg) @unlink(UPLOAD_DIR . '/' . basename((string)$sg['sig']));
     foreach (['job_lines', 'job_payments', 'job_auth', 'job_inspect'] as $t) q("DELETE FROM $t WHERE job_id IN (SELECT id FROM jobs WHERE user_id=?)", [$userId]);
     q('DELETE FROM po_lines WHERE po_id IN (SELECT id FROM purchase_orders WHERE user_id=?)', [$userId]);
     foreach (['mechanics', 'links', 'customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'shop_profile', 'appointments', 'time_entries', 'techs', 'vendors', 'purchase_orders', 'handoffs', 'part_returns', 'legacy_ros'] as $t) q("DELETE FROM $t WHERE user_id=?", [$userId]);

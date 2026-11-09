@@ -91,6 +91,7 @@ function appt_check_in(array $a): int {
     }
     $jid = $a['job_id'] && owns_row('jobs', (int)$a['job_id']) ? (int)$a['job_id'] : job_create($cid, $vehId, (string)$a['concern'], (string)$a['title'] ?: 'Appointment ' . date('M j', strtotime((string)$a['starts_at'])));
     q("UPDATE appointments SET status='arrived', customer_id=?, vehicle_id=?, job_id=?, updated_at=? WHERE id=?", [$cid, $vehId, $jid, now(), $a['id']]);
+    if (trim((string)($a['address'] ?? '')) !== '') q("UPDATE jobs SET location=? WHERE id=? AND COALESCE(location,'')=''", [$a['address'], $jid]);
     if ($a['tech_id']) q('UPDATE job_lines SET tech_id=? WHERE job_id=? AND tech_id IS NULL', [$a['tech_id'], $jid]);
     job_refresh($jid);
     return $jid;
@@ -116,9 +117,9 @@ function tech_open(int $techId, string $kind): ?array {
     return row('SELECT * FROM time_entries WHERE tech_id=? AND kind=? AND ended_at IS NULL ORDER BY id DESC LIMIT 1', [$techId, $kind]);
 }
 /** Punch: shift_in, shift_out (also stops a running job), job_start (one job at a time; clocks in the shift too), job_stop. */
-function clock_punch(array $tech, string $what, ?int $jobId = null, string $grp = ''): string {
-    $t = time(); $tid = (int)$tech['id'];
-    $close = function (string $kind) use ($tid, $t) { q('UPDATE time_entries SET ended_at=? WHERE tech_id=? AND kind=? AND ended_at IS NULL', [$t, $tid, $kind]); };
+function clock_punch(array $tech, string $what, ?int $jobId = null, string $grp = '', ?int $at = null): string {
+    $t = $at ?? time(); $tid = (int)$tech['id'];
+    $close = function (string $kind) use ($tid, $t) { q('UPDATE time_entries SET ended_at=MAX(started_at, ?) WHERE tech_id=? AND kind=? AND ended_at IS NULL', [$t, $tid, $kind]); };
     switch ($what) {
         case 'shift_in':
             if (!tech_open($tid, 'shift')) insert('time_entries', ['user_id' => uid(), 'tech_id' => $tid, 'kind' => 'shift', 'started_at' => $t]);
@@ -381,7 +382,7 @@ function shop_setup_steps(): array {
     $S = shop();
     return [
         ['Your shop name, phone and labor rate', $S['name'] !== '', url('shop'), false],
-        ['Add your team (even if it\'s just you)', (bool)col('SELECT 1 FROM techs WHERE user_id=?', [uid()]), url('team') . '#tform', false],
+        empty($S['solo']) ? ['Add your team (even if it\'s just you)', (bool)col('SELECT 1 FROM techs WHERE user_id=?', [uid()]), url('team') . '#tform', false] : ['Tell us how you work (just me / mobile)', true, url('shop') . '#mode', true],
         ['Opening hours and online booking', (bool)$S['book_on'], url('shop') . '#booking', false],
         ['Add your first customer', (bool)col('SELECT 1 FROM customers WHERE user_id=?', [uid()]), url('customers', ['c' => 'new']) . '#cform', false],
         ['Write your first estimate', (bool)col('SELECT 1 FROM jobs WHERE user_id=?', [uid()]), url('jobs', ['new' => 1]), false],

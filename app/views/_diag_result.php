@@ -4,7 +4,7 @@
 if (!defined('APP_ROOT')) { http_response_code(403); exit('Forbidden'); }
 $pro = !empty($public) ? (($_GET['mode'] ?? '') === 'pro') : is_pro();
 $vname = trim(($V['year'] ?? '') . ' ' . ($V['make'] ?? '') . ' ' . ($V['model'] ?? '')) ?: 'Vehicle not set';
-[$dLabel, $dText] = OBD_DRIVE[$A['drive']];
+[$dIco, $dLabel] = VERDICTS[verdict_from_drive((string)$A['drive'])]; $dLabel = $dIco . ' ' . $dLabel; $dText = OBD_DRIVE[$A['drive']][1];
 $diffLbl = [1 => 'Easy DIY', 2 => 'DIY with basic tools', 3 => 'Experienced DIY / shop', 4 => 'Shop job', 5 => 'Specialist'];
 $money = fn(array $c) => $c[1] <= 0 ? 'No cost' : '$' . number_format($c[0]) . ' – $' . number_format($c[1]);
 $recalls = [];

@@ -534,7 +534,7 @@ document.querySelectorAll('table').forEach(t => {
   if (now) setInterval(() => { now.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }, 15000);
   const ar = document.querySelector('[data-autorefresh]');
   if (ar) { let touched = false; document.addEventListener('input', () => { touched = true; }); document.addEventListener('focusin', () => { touched = true; });
-    setInterval(() => { if (!touched && document.visibilityState === 'visible') location.reload(); }, +ar.dataset.autorefresh * 1000); }
+    setInterval(() => { if (!touched && document.visibilityState === 'visible' && navigator.onLine && !(window.garageClockQueue && window.garageClockQueue().length)) location.reload(); }, +ar.dataset.autorefresh * 1000); }
   document.querySelectorAll('dialog[data-open-now]').forEach(d => d.showModal && d.showModal());
   document.querySelectorAll('[data-appt-date]').forEach(b => b.addEventListener('click', () => { const d = document.querySelector('#sheet-appt [name=date]'); if (d) d.value = b.dataset.apptDate; }));
 })();
@@ -625,7 +625,73 @@ document.querySelectorAll('[data-auth-form]').forEach(f => {
     if (m === 'email' && (!c.value || c.value === c.dataset.phone)) c.value = c.dataset.email || '';
     if (m !== 'email' && (!c.value || c.value === c.dataset.email)) c.value = c.dataset.phone || '';
     const msgRow = f.querySelector('[data-msg-row]'); msgRow.hidden = !(m === 'text' || m === 'email'); f.elements.msg.required = !msgRow.hidden;
+    const signRow = f.querySelector('[data-sign-row]'); if (signRow) signRow.hidden = m !== 'in_person';
   };
   sel.addEventListener('change', sync); sync();
 });
 document.querySelectorAll('[data-open-auth]').forEach(a => a.addEventListener('click', () => { const d = document.querySelector('.auth-form-wrap'); if (d) d.open = true; }));
+
+// Review requests: tapping Text / Email marks the job as asked (in the background).
+document.querySelectorAll('[data-review-ask]').forEach(a => a.addEventListener('click', () => {
+  const tok = document.querySelector('input[name=_csrf]'); if (!tok) return;
+  const fd = new FormData(); fd.append('action', 'review_asked'); fd.append('_csrf', tok.value); fd.append('id', a.dataset.reviewAsk); fd.append('ajax', '1');
+  fetch('index.php', { method: 'POST', body: fd, credentials: 'same-origin' }).catch(() => {});
+}, { once: true }));
+
+// Signature pad: the customer signs on the screen; the drawing goes with the approval as a PNG.
+document.querySelectorAll('[data-sig]').forEach(cv => {
+  const ctx = cv.getContext('2d'), f = cv.closest('form'), out = f && f.elements.signature;
+  let drawing = false, inked = false, last = null;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+  const style = () => { ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111'; };
+  const blank = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); style(); inked = false; if (out) out.value = ''; };
+  blank();
+  cv.addEventListener('pointerdown', e => { drawing = true; last = pos(e); cv.setPointerCapture(e.pointerId); e.preventDefault(); });
+  cv.addEventListener('pointermove', e => { if (!drawing) return; const p = pos(e); ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p; inked = true; e.preventDefault(); });
+  const end = () => { if (!drawing) return; drawing = false; if (inked && out) out.value = cv.toDataURL('image/png'); };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end); cv.addEventListener('pointerleave', end);
+  const clr = f && f.querySelector('[data-sig-clear]'); if (clr) clr.addEventListener('click', blank);
+});
+// A checkbox that shows / hides a related block of settings (data-toggle-target="#id").
+document.querySelectorAll('[data-toggle-target]').forEach(cb => { const t = document.querySelector(cb.dataset.toggleTarget); if (!t) return; const s = () => { t.hidden = !cb.checked; }; cb.addEventListener('change', s); s(); });
+
+// Time clock on bad shop Wi-Fi: a punch tapped while offline is kept on the phone with the time it was tapped, and sent
+// (in order) as soon as the connection is back. Online it is sent straight away, then the page refreshes as before.
+(() => {
+  const KEY = 'garage-clock-queue';
+  const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (_) { return []; } };
+  const write = q => { try { localStorage.setItem(KEY, JSON.stringify(q)); } catch (_) {} };
+  window.garageClockQueue = read;
+  const forms = [...document.querySelectorAll('form')].filter(f => f.querySelector('input[name=action][value=clock_punch]'));
+  let banner = null;
+  const show = () => {
+    const n = read().length;
+    if (!banner) { banner = document.createElement('div'); banner.className = 'flash offline-q'; (document.querySelector('main') || document.body).prepend(banner); }
+    banner.hidden = !n; banner.textContent = n ? '📶 ' + n + ' time clock tap' + (n === 1 ? '' : 's') + ' saved on this phone. ' + (navigator.onLine ? 'Sending…' : "They'll be sent with their real times when the connection is back.") : '';
+  };
+  const post = item => { const fd = new FormData(); item.forEach(([k, v]) => fd.append(k, v)); return fetch('index.php', { method: 'POST', body: fd, credentials: 'same-origin' }); };
+  let flushing = false;
+  const flush = async () => {
+    if (flushing || !navigator.onLine) return; flushing = true;
+    let sent = 0;
+    try {
+      for (let q = read(); q.length; q = read()) {
+        let r; try { r = await post(q[0]); } catch (_) { break; }        // still offline: try again later
+        write(read().slice(1)); sent++;
+        if (!r.ok) { const j = await r.json().catch(() => ({})); alert('A saved time clock tap was not accepted: ' + (j.error || 'error ' + r.status)); }
+      }
+    } finally { flushing = false; show(); }
+    if (sent && forms.length && !read().length) location.reload();
+  };
+  forms.forEach(f => f.addEventListener('submit', async e => {
+    e.preventDefault();
+    const item = [...new FormData(f, e.submitter || undefined).entries()].map(([k, v]) => [k, String(v)]);
+    item.push(['at', String(Math.floor(Date.now() / 1000))], ['ajax', '1']);
+    const queue = () => { write([...read(), item]); show(); const p = f.querySelector('input[name=pin]'); if (p) p.value = ''; };
+    if (!navigator.onLine || read().length) { queue(); flush(); return; }
+    let r; try { r = await post(item); } catch (_) { queue(); return; }
+    if (r.ok) { location.reload(); return; }
+    const j = await r.json().catch(() => ({})); alert(j.error || 'That did not work (' + r.status + ').');
+  }));
+  if (forms.length || read().length) { show(); flush(); addEventListener('online', flush); addEventListener('offline', show); }
+})();

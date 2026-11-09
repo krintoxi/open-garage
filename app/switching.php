@@ -31,6 +31,7 @@ const IMPORT_FIELDS = [
 ];
 
 function migrate_switching(PDO $pdo): void {
+    if (!in_array('review_asked_at', array_column($pdo->query('PRAGMA table_info(jobs)')->fetchAll(), 'name'), true)) $pdo->exec('ALTER TABLE jobs ADD COLUMN review_asked_at TEXT');
     $pdo->exec('CREATE TABLE IF NOT EXISTS legacy_ros (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, customer_id INT, vehicle_id INT, ro_no TEXT, ro_date TEXT, miles INT, description TEXT, total REAL, source TEXT, created_at TEXT)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_legacy_veh ON legacy_ros (vehicle_id)');
 }
@@ -139,4 +140,104 @@ function export_zip(int $userId): string {
     $z->addFromString('README.txt', "Everything from your " . APP_NAME . " account, exported " . date('Y-m-d H:i') . ".\neverything.json has every record; the .csv files open in Excel or Google Sheets; photos/ has your photos.\n");
     $z->close();
     return $f;
+}
+
+/* ---------- Accounting exports (roadmap #16): QuickBooks Online and Xero import files, payments, sales summary ---------- */
+
+const ACCT_KINDS = ['qbo_invoices' => 'QuickBooks Online: invoices', 'qbo_customers' => 'QuickBooks Online: customers', 'xero_invoices' => 'Xero: sales invoices', 'payments' => 'Payments received', 'summary' => 'Sales summary (any accountant)'];
+/** Period keys shared by "How you compare" and the exports: [from Y-m-d, to (exclusive) Y-m-d, label]. */
+function period_range(string $per): array {
+    return match ($per) {
+        'last' => [date('Y-m-01', strtotime('first day of last month')), date('Y-m-01'), date('F Y', strtotime('first day of last month'))],
+        '90' => [date('Y-m-d', strtotime('-90 days')), date('Y-m-d', strtotime('+1 day')), 'Last 90 days'],
+        'year' => [date('Y-01-01'), date('Y-m-d', strtotime('+1 day')), date('Y') . ' so far'],
+        default => [date('Y-m-01'), date('Y-m-d', strtotime('+1 day')), date('F Y') . ' so far'],
+    };
+}
+/** Stream one export as CSV. Invoices = repair orders invoiced in the period (approved lines only). */
+function acct_csv(string $kind, string $from, string $to): void {
+    $S = shop(); $us = fn(?string $d) => $d ? date('m/d/Y', strtotime($d)) : '';
+    $o = fopen('php://output', 'w'); $put = fn(array $r) => fputcsv($o, $r, ',', '"', '');
+    $jobs = rows("SELECT j.*, c.name cname, c.email cemail, c.phone cphone, v.year vy, v.make vm, v.model vmo, v.vin vvin FROM jobs j LEFT JOIN customers c ON c.id=j.customer_id LEFT JOIN vehicle v ON v.id=j.vehicle_id
+        WHERE j.user_id=? AND j.stage IN ('invoiced','paid') AND j.invoiced_at >= ? AND j.invoiced_at < ? ORDER BY j.invoiced_at", [uid(), $from, $to]);
+    $item = ['labor' => 'Labor', 'part' => 'Parts', 'fee' => 'Fees', 'sublet' => 'Sublet', 'core' => 'Core charge'];
+    $memo = fn(array $j) => trim(trim($j['vy'] . ' ' . $j['vm'] . ' ' . $j['vmo']) . ($j['vvin'] ? ' VIN ' . $j['vvin'] : '') . ' - RO ' . $j['est_no']);
+    $num = fn(array $j) => (string)($j['inv_no'] ?: $j['est_no']);
+    // Lines as the invoice shows them, plus shop supplies and the discount as their own lines.
+    $linesOf = function (array $j) use ($item): array {
+        $ls = job_lines((int)$j['id']); $t = job_totals($j, $ls, 'approved'); $out = [];
+        foreach ($ls as $l) if ($l['status'] === 'approved' && isset($item[$l['kind']])) $out[] = [$item[$l['kind']], trim(($l['grp'] && $l['grp'] !== 'General' ? $l['grp'] . ': ' : '') . $l['description']), (float)$l['qty'], (float)$l['price'], round((float)$l['qty'] * (float)$l['price'], 2), (bool)$l['taxable']];
+        if ($t['supplies'] > 0) $out[] = ['Fees', 'Shop supplies', 1, round($t['supplies'], 2), round($t['supplies'], 2), true];
+        if (!empty($t['discount'])) $out[] = ['Discount', 'Discount', 1, -round($t['discount'], 2), -round($t['discount'], 2), false];
+        return [$out, $t];
+    };
+    switch ($kind) {
+        case 'qbo_invoices':
+            $put(['InvoiceNo', 'Customer', 'InvoiceDate', 'DueDate', 'Terms', 'Memo', 'Item(Product/Service)', 'ItemDescription', 'ItemQuantity', 'ItemRate', 'ItemAmount', 'ItemTaxCode', 'Service Date']);
+            foreach ($jobs as $j) { [$ls] = $linesOf($j); foreach ($ls as [$it, $d, $q, $r, $a, $tx]) $put([$num($j), $j['cname'] ?: 'Walk-in', $us($j['invoiced_at']), $us($j['invoiced_at']), 'Due on receipt', $memo($j), $it, $d, $q, $r, $a, $tx ? 'TAX' : 'NON', $us($j['invoiced_at'])]); }
+            break;
+        case 'xero_invoices':
+            $put(['*ContactName', 'EmailAddress', '*InvoiceNumber', 'Reference', '*InvoiceDate', '*DueDate', 'InventoryItemCode', '*Description', '*Quantity', '*UnitAmount', 'Discount', '*AccountCode', '*TaxType', 'Currency']);
+            foreach ($jobs as $j) { [$ls] = $linesOf($j); foreach ($ls as [$it, $d, $q, $r, $a, $tx]) $put([$j['cname'] ?: 'Walk-in', $j['cemail'], $num($j), $memo($j), $us($j['invoiced_at']), $us($j['invoiced_at']), '', $it . ': ' . $d, $q, $r, '', '200', $tx ? 'Tax on Sales' : 'Tax Exempt', strtoupper((string)($S['currency_code'] ?: 'usd'))]); }
+            break;
+        case 'qbo_customers':
+            $put(['Name', 'Email', 'Phone', 'Notes']);
+            foreach (rows('SELECT name, email, phone, notes FROM customers WHERE user_id=? ORDER BY name', [uid()]) as $c) $put([$c['name'], $c['email'], $c['phone'], preg_replace('/\s+/', ' ', (string)$c['notes'])]);
+            break;
+        case 'payments':
+            $put(['Date', 'Invoice', 'Customer', 'Method', 'Amount', 'Reference', 'Note']);
+            foreach (rows("SELECT p.*, j.inv_no, j.est_no, c.name cname FROM job_payments p JOIN jobs j ON j.id=p.job_id LEFT JOIN customers c ON c.id=j.customer_id WHERE j.user_id=? AND p.paid_on >= ? AND p.paid_on < ? ORDER BY p.paid_on, p.id", [uid(), $from, $to]) as $p)
+                $put([$us($p['paid_on']), $p['inv_no'] ?: $p['est_no'], $p['cname'] ?: 'Walk-in', PAY_METHODS[$p['method']] ?? $p['method'], round((float)$p['amount'], 2), $p['ext_ref'] ?? '', $p['note']]);
+            break;
+        default: // summary
+            $put(['Date', 'Invoice', 'Customer', 'Vehicle', 'Labor', 'Parts', 'Fees', 'Sublet', 'Core charges', 'Shop supplies', 'Discount', 'Tax', 'Total', 'Paid', 'Balance', 'Parts cost', 'Gross profit']);
+            foreach ($jobs as $j) { [, $t] = $linesOf($j); $put([$us($j['invoiced_at']), $num($j), $j['cname'] ?: 'Walk-in', trim($j['vy'] . ' ' . $j['vm'] . ' ' . $j['vmo']), round($t['labor'], 2), round($t['parts'], 2), round($t['fees'], 2), round($t['sublet'], 2), round($t['core'], 2), round($t['supplies'], 2), round((float)($t['discount'] ?? 0), 2), round($t['tax'], 2), round($t['total'], 2), round((float)$j['paid'], 2), round($t['total'] - (float)$j['paid'], 2), round($t['cost'], 2), round($t['profit'], 2)]); }
+    }
+    fclose($o);
+}
+
+/** The review request the shop sends from its own phone or email (to every paying customer, never filtered). */
+function review_text(array $S, string $customer = ''): string {
+    $first = $customer !== '' ? strtok($customer, ' ') : '';
+    return 'Hi' . ($first ? ' ' . $first : '') . ', thanks for choosing ' . ($S['name'] ?: 'us') . '! If you have a minute, a quick review helps a lot: ' . $S['review_url'];
+}
+/** Text / Email buttons for a review request; tapping one marks the job as asked. */
+function review_buttons(array $job, array $S, ?string $phone, ?string $email, string $customer = ''): string {
+    if (empty($S['review_url'])) return '';
+    $t = review_text($S, $customer); $ph = preg_replace('/[^\d+]/', '', (string)$phone); $id = (int)$job['id'];
+    return ($ph !== '' ? '<a class="btn sm" href="sms:' . h($ph) . '?&amp;body=' . h(rawurlencode($t)) . '" data-review-ask="' . $id . '">💬 Text</a>' : '')
+        . ($email ? '<a class="btn sm" href="mailto:' . h((string)$email) . '?subject=' . h(rawurlencode('Thanks from ' . ($S['name'] ?: 'us'))) . '&amp;body=' . h(rawurlencode($t)) . '" data-review-ask="' . $id . '">✉️ Email</a>' : '');
+}
+
+/* ---------- How the shop works (roadmap #19): mobile mechanics, signatures on the screen ---------- */
+
+function migrate_modes(PDO $pdo): void {
+    $cols = fn(string $t) => array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
+    if (!in_array('location', $cols('jobs'), true)) $pdo->exec('ALTER TABLE jobs ADD COLUMN location TEXT');
+    if (!in_array('address', $cols('appointments'), true)) $pdo->exec('ALTER TABLE appointments ADD COLUMN address TEXT');
+    if (!in_array('sig', $cols('job_auth'), true)) $pdo->exec('ALTER TABLE job_auth ADD COLUMN sig TEXT');
+}
+function maps_url(string $address): string { return 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode($address); }
+/** Google Maps directions through the day's addresses in time order (from wherever the phone is now). */
+function route_url(array $addresses): string {
+    $a = array_values(array_unique(array_filter(array_map('trim', $addresses))));
+    if (!$a) return '';
+    $dest = array_pop($a);
+    return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' . rawurlencode($dest) . ($a ? '&waypoints=' . rawurlencode(implode('|', array_slice($a, 0, 9))) : '');
+}
+/** A signature drawn on the screen (PNG data URL) saved as a private file. Returns the stored name or ''. */
+function save_signature(string $dataUrl, int $jobId): string {
+    if (!preg_match('~^data:image/png;base64,([A-Za-z0-9+/=]+)$~', $dataUrl, $m) || strlen($m[1]) > 400000) return '';
+    $png = base64_decode($m[1], true);
+    if ($png === false || substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n") return '';
+    if (!is_dir(UPLOAD_DIR)) mkdir(UPLOAD_DIR, 0775, true);
+    $name = 'sig-' . $jobId . '-' . bin2hex(random_bytes(6)) . '.png';
+    file_put_contents(UPLOAD_DIR . '/' . $name, $png);
+    return $name;
+}
+/** The signature as an inline image for printed documents (no extra file route needed). */
+function signature_img(?string $name): string {
+    $f = $name ? realpath(UPLOAD_DIR . '/' . basename($name)) : false;
+    if (!$f || !str_starts_with($f, realpath(UPLOAD_DIR) . DIRECTORY_SEPARATOR) || !is_file($f)) return '';
+    return '<img class="sig-img" alt="Customer signature" src="data:image/png;base64,' . base64_encode((string)file_get_contents($f)) . '">';
 }

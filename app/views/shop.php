@@ -20,6 +20,14 @@ $i = fn(string $k) => h((string)$S[$k]);
       <div><label>Email</label><input type="email" name="email" value="<?= $i('email') ?>"></div><div><label>Website</label><input type="text" name="website" value="<?= $i('website') ?>"></div>
       <div><label><?= h(shop_reg_label($S)) ?></label><input type="text" name="license" value="<?= $i('license') ?>" placeholder="printed on estimates and invoices"></div><div><label>Tax ID</label><input type="text" name="tax_id" value="<?= $i('tax_id') ?>"></div>
     </div>
+    <h2 style="margin-top:18px" id="mode">How you work</h2>
+    <div class="form-grid">
+      <div class="full"><label class="inline"><input type="checkbox" name="solo" value="1" <?= !empty($S['solo']) ? 'checked' : '' ?>> <span><b>Just me</b>: no staff. Hides the time clock, team and payroll screens.</span></label></div>
+      <div class="full"><label class="inline"><input type="checkbox" name="mobile" value="1" <?= !empty($S['mobile']) ? 'checked' : '' ?> data-toggle-target="#mobile-fees"> <span><b>Mobile</b>: I go to the customer. Adds the service address, directions, a route for the day, call-out and travel fees.</span></label></div>
+      <div id="mobile-fees" class="full form-grid" style="margin:0"<?= empty($S['mobile']) ? ' hidden' : '' ?>>
+        <div><label>Call-out fee</label><input type="number" step="0.01" name="callout_fee" value="<?= $i('callout_fee') ?>"></div><div><label>Travel per mile</label><input type="number" step="0.01" name="mile_rate" value="<?= $i('mile_rate') ?>"></div>
+        <div><label>Free miles (each way)</label><input type="number" name="free_miles" value="<?= $i('free_miles') ?>"></div><div></div></div>
+    </div>
     <h2 style="margin-top:18px" id="state">Your state's rules</h2>
     <?php [$rules, $rf] = shop_rules($S); $warn = shop_rule_warnings($S); ?>
     <div class="form-grid">
@@ -55,6 +63,7 @@ $i = fn(string $k) => h((string)$S[$k]);
       <div><label>Extra authorization needed above (%)</label><input type="number" step="0.1" name="auth_threshold_pct" value="<?= $i('auth_threshold_pct') ?>"></div><div><label>…or above (amount)</label><input type="number" step="0.01" name="auth_threshold_amt" value="<?= $i('auth_threshold_amt') ?>"></div>
       <div class="full"><small class="muted">The repair order warns when the total goes over what the customer authorized (California, for example: more than 10% or $100 over the written estimate needs documented additional authorization). Check your local rules.</small></div>
       <div class="full"><label>Warranty statement</label><textarea name="warranty" rows="2"><?= h($S['warranty']) ?></textarea></div>
+      <div class="full"><label>Google review link</label><input type="url" name="review_url" value="<?= $i('review_url') ?>" placeholder="https://g.page/r/…/review"><small class="muted">In your Google Business Profile, tap "Ask for reviews" and copy the link. The app then offers it to every paying customer (Google doesn't allow asking only the happy ones).</small></div>
       <div class="full"><label class="inline"><input type="checkbox" name="mm_line" value="1" <?= !empty($S['mm_line']) ? 'checked' : '' ?>> Print on invoices: having the work done here does not void the vehicle's factory warranty (Magnuson-Moss Warranty Act)</label></div>
       <div><label>Comebacks: flat-rate hours on rework are</label><select name="comeback_pay"><?php foreach (COMEBACK_PAY as $k => $lb): ?><option value="<?= $k ?>" <?= ($S['comeback_pay'] ?? 'unpaid') === $k ? 'selected' : '' ?>><?= h($lb) ?></option><?php endforeach; ?></select></div><div></div>
       <div class="full"><label>Estimate terms</label><textarea name="est_terms" rows="2"><?= h($S['est_terms']) ?></textarea></div>
