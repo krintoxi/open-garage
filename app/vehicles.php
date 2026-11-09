@@ -234,7 +234,7 @@ function vehicle_templates(string $kind): array {
 /** Insert the starter schedule and checklist for a vehicle. */
 function seed_vehicle_templates(int $vehicleId, string $kind): void {
     $t = vehicle_templates($kind);
-    foreach ($t['maintenance'] as [$item, $cat, $mi, $mo, $notes, $prio]) insert('maintenance', ['vehicle_id' => $vehicleId, 'item' => $item, 'category' => $cat, 'interval_miles' => $mi, 'interval_months' => $mo, 'notes' => $notes, 'priority' => $prio]);
+    foreach ($t['maintenance'] as [$item, $cat, $mi, $mo, $notes, $prio]) insert('maintenance', ['vehicle_id' => $vehicleId, 'item' => $item, 'category' => $cat, 'interval_miles' => $mi, 'interval_months' => $mo, 'notes' => $notes, 'priority' => $prio, 'source' => 'Typical schedule for this kind of vehicle']);
     foreach ($t['checks'] as [$cat, $item, $how, $sort]) insert('checks', ['vehicle_id' => $vehicleId, 'category' => $cat, 'item' => $item, 'how_to' => $how, 'frequency' => 'weekly', 'sort' => $sort, 'active' => 1]);
 }
 
@@ -406,10 +406,10 @@ function account_export(int $userId): array {
     }
     $out['mechanics'] = rows('SELECT * FROM mechanics WHERE user_id=?', [$userId]);
     $out['shop_reports'] = rows('SELECT id, vehicle_id, concern, created_at, shop_name, imported_at, returned_at, revoked FROM handoffs WHERE user_id=?', [$userId]);
-    foreach (['customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'shop_profile', 'appointments', 'techs', 'time_entries', 'vendors', 'purchase_orders'] as $t) $out[$t] = rows("SELECT * FROM $t WHERE user_id=?", [$userId]);
+    foreach (['customers', 'diag_reports', 'tool_links', 'jobs', 'canned_jobs', 'parts_catalog', 'shop_profile', 'appointments', 'techs', 'time_entries', 'vendors', 'purchase_orders', 'part_returns', 'legacy_ros'] as $t) $out[$t] = rows("SELECT * FROM $t WHERE user_id=?", [$userId]);
     foreach ($out['shop_profile'] as &$sp) { $d = json_decode((string)$sp['data'], true) ?: []; unset($d['stripe_sk']); $sp['data'] = json_encode($d); } unset($sp);
     $out['po_lines'] = rows('SELECT x.* FROM po_lines x JOIN purchase_orders p ON p.id=x.po_id WHERE p.user_id=?', [$userId]);
-    foreach (['job_lines', 'job_payments', 'job_auth', 'job_inspect'] as $t) $out[$t] = rows("SELECT x.* FROM $t x JOIN jobs j ON j.id=x.job_id WHERE j.user_id=?", [$userId]);
+    foreach (['job_lines', 'job_payments', 'job_auth', 'job_inspect', 'job_versions'] as $t) $out[$t] = rows("SELECT x.* FROM $t x JOIN jobs j ON j.id=x.job_id WHERE j.user_id=?", [$userId]);
     $out['links'] = rows('SELECT * FROM links WHERE user_id=?', [$userId]);
     return $out;
 }

@@ -41,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST['pay']) && in_array($j
         }
         $stage = $yes ? ($job['stage'] === 'estimate' || $job['stage'] === 'declined' ? 'approved' : $job['stage']) : ($job['stage'] === 'estimate' ? 'declined' : $job['stage']);
         q('UPDATE jobs SET stage=?, approved_at=?, approved_by=?, approve_note=?, seen_approval=0 WHERE id=?', [$stage, now(), $name, $note, $job['id']]);
+        if ($yes && shop_rules($S)[1]['parts_back']) q('UPDATE jobs SET parts_return=? WHERE id=?', [!empty($_POST['parts_back']) ? 'yes' : 'no', $job['id']]);
         job_refresh((int)$job['id']);
         $done = $yes ? 'yes' : 'no';
         $job = row('SELECT * FROM jobs WHERE id=?', [$job['id']]);
@@ -52,7 +53,7 @@ $doc = in_array($job['stage'], ['invoiced', 'paid'], true) ? 'invoice' : 'estima
 $insp = rows('SELECT * FROM job_inspect WHERE job_id=? ORDER BY sort', [$job['id']]);
 $interactive = $pending && $doc === 'estimate';
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
-<title><?= h(($S['name'] ?: APP_NAME) . ' · ' . ($doc === 'invoice' ? 'Invoice ' . ($job['inv_no'] ?: $job['est_no']) : 'Estimate ' . $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=4"></head><body>
+<title><?= h(($S['name'] ?: APP_NAME) . ' · ' . ($doc === 'invoice' ? 'Invoice ' . ($job['inv_no'] ?: $job['est_no']) : 'Estimate ' . $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=6"></head><body>
 <div class="bar"><button type="button" onclick="print()">Print / save as PDF</button></div>
 <div class="page">
   <?php if ($done === 'yes'): ?><div class="notice">Thank you, <?= h((string)$job['approved_by']) ?>. Your approval was sent to <?= h($S['name'] ?: 'the shop') ?>.</div>
@@ -66,6 +67,7 @@ $interactive = $pending && $doc === 'estimate';
   <?php if ($interactive): ?>
     <div class="sign"><label><b>Your name</b> (this is your signature)</label><input type="text" name="name" required maxlength="80" autocomplete="name">
       <label>Message to the shop (optional)</label><textarea name="note" rows="2" maxlength="500"></textarea>
+      <?php if (shop_rules($S)[1]['parts_back']): ?><label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" name="parts_back" value="1"> I'd like my replaced parts back (except parts returned for core credit or warranty)</label><?php endif; ?>
       <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" name="agree" value="1" required style="margin-top:4px"> <span>I authorize the ticked work at the prices shown, including applicable tax and fees. Any additional work needs my further approval.</span></label>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="primary">Approve selected work</button></div></div></form>
   <?php elseif ($doc === 'estimate'): ?><p class="mut">This estimate has been answered<?= $job['approved_by'] ? ' by ' . h($job['approved_by']) : '' ?>. Questions? Call <?= h($S['phone'] ?: 'the shop') ?>.</p><?php endif; ?>

@@ -34,6 +34,29 @@ $vendorPick = function (string $sup) use ($vlist): string {
       <?php if ($oos): ?><form method="post" style="margin-top:14px"><input type="hidden" name="action" value="po_new"><?= $csrf ?><input type="hidden" name="restock" value="1">
         <p class="muted" style="font-size:13px"><?= $oos ?> catalog part<?= $oos === 1 ? ' is' : 's are' ?> out of stock.</p><div class="row" style="gap:8px;flex-wrap:wrap"><?= $vendorPick('') ?><button class="sm">Restock order</button></div></form><?php endif; ?>
     </div>
+    <?php returns_sync(); $RT = returns_open(); $credited = (float)col("SELECT COALESCE(SUM(amount),0) FROM part_returns WHERE user_id=? AND status='credited' AND credited_on >= ?", [uid(), date('Y-m-d', strtotime('-90 days'))]); ?>
+    <div class="card" id="returns" style="margin-top:18px">
+      <h2>Cores &amp; returns <span class="muted"><?= count($RT['items']) ?></span></h2>
+      <p class="muted" style="font-size:13px;margin-top:-6px">Old parts to send back for core credit, and wrong or unneeded parts to return. <?= money($RT['owed']) ?> still owed to you<?= $RT['overdue'] ? ' · <b class="warn-t">' . $RT['overdue'] . ' overdue</b>' : '' ?> · <?= money($credited) ?> credited in the last 90 days.</p>
+      <?php if (!$RT['items']): ?><div class="empty">Nothing waiting. Core charges on approved jobs show up here by themselves.</div><?php endif; ?>
+      <ul class="list"><?php foreach ($RT['items'] as $r): $late = $r['due_on'] && $r['due_on'] < today(); ?><li class="ret-row">
+        <div class="grow"><span class="t"><?= h($r['description']) ?><?= $r['part_no'] ? ' <small class="muted">' . h($r['part_no']) . '</small>' : '' ?></span>
+          <small><?= h(RETURN_KINDS[$r['kind']] ?? $r['kind']) ?> · <?= h($r['vname'] ?: 'vendor?') ?><?= $r['job_id'] ? ' · <a href="' . url('job', ['id' => $r['job_id']]) . '">' . h($r['inv_no'] ? 'Invoice ' . $r['inv_no'] : $r['est_no']) . '</a>' : '' ?> · <?= $r['status'] === 'sent' ? 'sent ' . h(date('M j', strtotime((string)$r['sent_on']))) : ($late ? '<b class="warn-t">return by ' . h(date('M j', strtotime((string)$r['due_on']))) . '</b>' : 'return by ' . h(date('M j', strtotime((string)$r['due_on'])))) ?></small></div>
+        <b><?= money((float)$r['amount']) ?></b>
+        <?php if ($r['status'] === 'open'): ?><form method="post"><input type="hidden" name="action" value="ret_status"><?= $csrf ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="sm" name="to" value="sent">Sent back</button></form><?php endif; ?>
+        <details class="menu-pop"><summary class="btn sm <?= $r['status'] === 'sent' ? 'primary' : 'ghost' ?>"><?= $r['status'] === 'sent' ? 'Credit received' : '⋯' ?></summary><div>
+          <form method="post" class="ret-credit"><input type="hidden" name="action" value="ret_status"><?= $csrf ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><input type="hidden" name="to" value="credited"><input type="text" name="credit_ref" placeholder="Credit memo #"><input type="number" step="0.01" name="amount" value="<?= h((string)(float)$r['amount']) ?>"><button class="primary">Credit received</button></form>
+          <form method="post"><input type="hidden" name="action" value="ret_status"><?= $csrf ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button name="to" value="lost" class="danger" data-confirm="Write this off? It stops counting as money owed.">Write off</button></form>
+        </div></details></li><?php endforeach; ?></ul>
+      <details style="margin-top:10px"><summary><b>＋ Add a return</b></summary>
+        <form method="post" class="form-grid" style="margin-top:8px"><input type="hidden" name="action" value="ret_add"><?= $csrf ?>
+          <div><label>Type</label><select name="kind"><?php foreach (RETURN_KINDS as $k => $lb): ?><option value="<?= $k ?>" <?= $k === 'return' ? 'selected' : '' ?>><?= h($lb) ?></option><?php endforeach; ?></select></div>
+          <div><label>Vendor</label><select name="vendor_id"><option value="">—</option><?php foreach ($vlist as $v): ?><option value="<?= (int)$v['id'] ?>"><?= h($v['name']) ?></option><?php endforeach; ?></select></div>
+          <div class="full"><label>Part</label><input type="text" name="description" placeholder="e.g. Front pads (wrong fitment)" required></div>
+          <div><label>Part number</label><input type="text" name="part_no"></div><div><label>Credit expected</label><input type="number" step="0.01" name="amount"></div>
+          <div><label>Return within (days)</label><input type="number" name="days" value="30"></div><div></div>
+          <div class="full"><button class="sm primary">Add</button></div></form></details>
+    </div>
     <div class="card" style="margin-top:18px">
       <h2>Purchase orders</h2>
       <?php if (!$pos): ?><div class="empty">None yet.</div><?php endif; ?>

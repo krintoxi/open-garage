@@ -157,7 +157,7 @@ function time_report(int $from, int $to): array {
         $shift = 0.0; $job = 0.0;
         foreach ($es as $e) { $hh = entry_hours($e, $from, $to); if ($e['kind'] === 'shift') $shift += $hh; else $job += $hh; }
         $fl = row("SELECT COALESCE(SUM(l.qty),0) h, COALESCE(SUM(l.qty*l.price),0) amt FROM job_lines l JOIN jobs j ON j.id=l.job_id WHERE l.tech_id=? AND l.kind='labor' AND l.status='approved'
-            AND j.stage IN ('invoiced','paid') AND j.invoiced_at >= ? AND j.invoiced_at < ?", [$t['id'], date('Y-m-d H:i:s', $from), date('Y-m-d H:i:s', $to)]);
+            AND j.stage IN ('invoiced','paid') AND j.invoiced_at >= ? AND j.invoiced_at < ?" . ((shop()['comeback_pay'] ?? 'unpaid') === 'unpaid' ? ' AND j.comeback_of IS NULL' : ''), [$t['id'], date('Y-m-d H:i:s', $from), date('Y-m-d H:i:s', $to)]);
         $flag = (float)$fl['h'];
         $pay = match ($t['pay_type']) { 'flat' => $flag * (float)$t['pay_rate'], 'hourly' => $shift * (float)$t['pay_rate'], default => 0.0 };
         if ($shift || $job || $flag || $t['active']) $out[] = ['tech' => $t, 'shift' => $shift, 'job' => $job, 'flagged' => $flag, 'sold' => (float)$fl['amt'],

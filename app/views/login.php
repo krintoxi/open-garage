@@ -26,6 +26,7 @@ if (!MULTI_USER): ?>
     </form></details>
   <?php if (PUBLIC_LOOKUP): ?><div class="card lookup-card"><b>Check-engine light on?</b><p class="muted small-c" style="text-align:left;margin:2px 0 8px">Type the code to see what it means. No account needed.</p>
     <form method="get" class="row" style="flex-wrap:nowrap"><input type="hidden" name="p" value="lookup"><input type="text" name="codes" placeholder="e.g. P0420" required autocapitalize="characters"><button>Look up</button></form></div><?php endif; ?>
+  <p class="muted small-c" style="margin-top:12px">🔒 We never sell your data. <a href="<?= url('privacy') ?>">Your data, in plain words</a></p>
 </div>
 <?php endif; ?>
 </div></body></html>

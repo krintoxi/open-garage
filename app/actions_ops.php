@@ -76,7 +76,7 @@ case 'tech_save':
     if ($id && !owns_row('techs', (int)$id)) $nf();
     if (post('name') === '') { flash('Name the technician.', 'err'); redirect(url('team')); }
     $d = ['name' => mb_substr(post('name'), 0, 60), 'role' => array_key_exists(post('role'), TECH_ROLES) ? post('role') : 'tech', 'pay_type' => array_key_exists(post('pay_type'), PAY_TYPES) ? post('pay_type') : 'hourly',
-        'pay_rate' => max(0, post_float('pay_rate') ?? 0), 'active' => post('active') === '1' ? 1 : 0, 'color' => preg_match('/^#[0-9a-f]{6}$/i', post('color')) ? post('color') : TECH_COLORS[(int)col('SELECT COUNT(*) FROM techs WHERE user_id=?', [uid()]) % count(TECH_COLORS)]];
+        'pay_rate' => max(0, post_float('pay_rate') ?? 0), 'cert_no' => mb_substr(post('cert_no'), 0, 40), 'active' => post('active') === '1' ? 1 : 0, 'color' => preg_match('/^#[0-9a-f]{6}$/i', post('color')) ? post('color') : TECH_COLORS[(int)col('SELECT COUNT(*) FROM techs WHERE user_id=?', [uid()]) % count(TECH_COLORS)]];
     if (post('pin') !== '') { if (!preg_match('/^\d{4,8}$/', post('pin'))) { flash('A PIN is 4 to 8 digits.', 'err'); redirect(url('team', ['t' => $id])); } $d['pin_hash'] = password_hash(post('pin'), PASSWORD_DEFAULT); }
     if (post('clear_pin') === '1') $d['pin_hash'] = null;
     if ($id) update('techs', $d, (int)$id); else insert('techs', $d + ['user_id' => uid(), 'sort' => 0, 'created_at' => now()]);
@@ -236,7 +236,7 @@ case 'parts_paste':
         $cost = (float)preg_replace('/[^\d.]/', '', $g('cost')); $qty = (float)preg_replace('/[^\d.]/', '', $g('qty')) ?: 1;
         insert('job_lines', ['job_id' => $jid, 'grp' => $grp, 'kind' => 'part', 'description' => mb_substr($desc, 0, 200), 'part_no' => mb_substr($g('part_no'), 0, 60), 'brand' => mb_substr($g('brand'), 0, 60),
             'supplier' => mb_substr($g('supplier') ?: post('supplier'), 0, 60), 'qty' => $qty, 'cost' => $cost, 'price' => $cost > 0 ? matrix_price($cost) : 0, 'taxable' => 1,
-            'status' => in_array($job['stage'], ['estimate', 'declined'], true) ? 'pending' : 'approved', 'pstatus' => 'quoted', 'sort' => ++$sort]);
+            'status' => 'pending', 'pstatus' => 'quoted', 'sort' => ++$sort]);
         $n++;
     }
     job_refresh($jid);

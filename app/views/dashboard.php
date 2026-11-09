@@ -96,7 +96,8 @@ if ($open) {
 if ($recallOpen) $todo[] = ['⚑', 'Check ' . (count($recallOpen) === 1 ? 'a safety recall' : count($recallOpen) . ' safety recalls'), 'Recall repairs are free at a dealer. It takes a minute to see if yours is affected.', url('recalls'), 'Check', 'warn'];
 $kbc = nhtsa_db() ? bulletin_counts($veh) : ['all' => 0, 'warranty' => 0, 'inv' => 0];
 if ($kbc['warranty']) $todo[] = ['🎁', $kbc['warranty'] . ' warranty extension' . ($kbc['warranty'] === 1 ? '' : 's') . ' for your ' . $short, 'The maker extended the warranty on some parts of this model. If one matches a problem you have, a dealer may fix it free.', url('bulletins'), 'See', 'ok'];
-if (!$lastInsp || $lastInspDays >= 7) $todo[] = ['✅', 'Do the 5-minute weekly check', is_two_wheeler($veh) ? 'Tires, brakes, oil level and lights.' : 'A quick look under the car, the fluid levels, the fan and the lights.', url('inspection_new'), 'Start', ''];
+$stk = check_streak((int)$veh['id']);
+if (!$lastInsp || $lastInspDays >= 7) $todo[] = ['✅', 'Do the 5-minute weekly check', ($stk >= 2 ? 'Keep your ' . $stk . '-week streak going. ' : '') . (is_two_wheeler($veh) ? 'Tires, brakes, oil level and lights.' : 'A quick look under the car, the fluid levels, the fan and the lights.'), url('inspection_new'), 'Start', ''];
 foreach (array_slice($due, 0, 2) as [$m, $state, $lbl]) $todo[] = ['🛠', $m['item'], ucfirst($lbl) . '.', url('maintenance'), 'Open', $state === 'overdue' ? 'warn' : ''];
 if ($neverDone) $todo[] = ['📝', 'Fill in your service history', $plural(count($neverDone), 'item') . ' have no last-done date yet (' . implode(', ', array_map(fn($m) => $m['item'], array_slice($neverDone, 0, 3))) . (count($neverDone) > 3 ? ', …' : '') . '). Add what you know; skip the rest.', url('maintenance'), 'Fill in', ''];
 foreach ($maint as $m) if (!empty($m['due_date']) && ($dd = days_until($m['due_date'])) !== null && $dd > 30 && $dd <= 90) $todo[] = ['📅', $m['item'] . ' by ' . date('M j', strtotime($m['due_date'])), 'Book it, or do it at your next visit.', url('maintenance'), 'Plan', ''];
@@ -124,13 +125,16 @@ $taskLi = fn(array $t) => '<li class="task ' . h($t[5]) . '"><a href="' . $t[3] 
   </div>
   <div class="ds-foot">
     <details class="ds-odo">
+      <?php $est = miles_estimate($veh); ?>
       <summary><span><?= is_two_wheeler($veh) ? '🛵' : '🚗' ?> <b><?= number_format($miles) ?></b> mi</span><small><?= h($milesWhen) ?></small><em>Update</em></summary>
-      <form method="post" class="row"><input type="hidden" name="action" value="update_miles"><?= $csrfIn ?><input type="number" name="miles" inputmode="numeric" placeholder="What does the odometer say?" required><button class="primary sm" type="submit">Save</button></form>
+      <form method="post" class="row"><input type="hidden" name="action" value="update_miles"><?= $csrfIn ?><input type="number" name="miles" inputmode="numeric" placeholder="What does the odometer say?" value="<?= $est ? $est[0] : '' ?>" required><button class="primary sm" type="submit">Save</button></form>
     </details>
+    <?php if ($est): ?><form method="post" class="ds-guess"><input type="hidden" name="action" value="update_miles"><?= $csrfIn ?><input type="hidden" name="miles" value="<?= $est[0] ?>"><span>Is it about <b><?= number_format($est[0]) ?></b> mi now?</span><button class="sm">Yes, about that</button></form><?php endif; ?>
+    <?php $streak = check_streak((int)$veh['id']); if ($streak >= 2): ?><span class="ds-streak" title="Weekly checks in a row (one missed week is fine)">🔥 <?= $streak ?>-week check streak</span><?php endif; ?>
     <?php if ($health['reasons']): ?>
     <details class="ds-why"><summary>Why <?= (int)$health['score'] ?>/100?</summary>
-      <div class="health-why"><?php foreach ($health['reasons'] as $r): ?><a href="<?= h($r['url']) ?>" class="chip chip-<?= h($r['kind']) ?>"><?= h(mb_strimwidth($r['label'], 0, 46, '…')) ?> <em>−<?= rtrim(rtrim(number_format($r['pts'], 1), '0'), '.') ?></em></a><?php endforeach; ?></div>
-      <p class="muted">Every open problem, overdue service, recall and warning code takes points off. Sort them out and the score climbs back up.</p>
+      <div class="health-why"><?php foreach ($health['reasons'] as $r): ?><a href="<?= h($r['url']) ?>" class="chip chip-<?= h($r['kind']) ?>"><?= h(mb_strimwidth($r['label'], 0, 46, '…')) ?> <em>+<?= rtrim(rtrim(number_format($r['pts'], 1), '0'), '.') ?></em></a><?php endforeach; ?></div>
+      <p class="muted">Each item shows how many points you get back by sorting it out: fix the problem, log the service, check the recall.</p>
     </details>
     <?php endif; ?>
     <a class="ds-share" href="<?= url('share') ?>">⇪ Share</a>

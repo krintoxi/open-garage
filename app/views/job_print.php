@@ -9,6 +9,6 @@ $doc = in_array($_GET['doc'] ?? '', ['estimate', 'workorder', 'invoice'], true) 
 $insp = rows('SELECT * FROM job_inspect WHERE job_id=? ORDER BY sort', [$jid]);
 $interactive = false;
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
-<title><?= h(ucfirst($doc) . ' ' . ($doc === 'invoice' ? ($job['inv_no'] ?: $job['est_no']) : $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=4"></head><body>
+<title><?= h(ucfirst($doc) . ' ' . ($doc === 'invoice' ? ($job['inv_no'] ?: $job['est_no']) : $job['est_no'])) ?></title><link rel="stylesheet" href="assets/doc.css?v=6"></head><body>
 <div class="bar"><a href="<?= url('job', ['id' => $jid]) ?>">← Back</a><button type="button" class="primary" onclick="print()">Print / save as PDF</button></div>
 <div class="page"><?php require APP_ROOT . '/app/views/_jobdoc.php'; ?></div></body></html>

@@ -20,6 +20,8 @@ if ($id && isset(OWNED_BY_ACTION[$action]) && !owns(OWNED_BY_ACTION[$action], $i
 if (in_array($action, OPS_ACTIONS, true)) { require APP_ROOT . '/app/actions_ops.php'; exit; }
 if (in_array($action, CONNECT_ACTIONS, true)) { require APP_ROOT . '/app/actions_connect.php'; exit; }
 if (in_array($action, FU_ACTIONS, true)) { require APP_ROOT . '/app/actions_followups.php'; exit; }
+if (in_array($action, RET_ACTIONS, true)) { require APP_ROOT . '/app/actions_returns.php'; exit; }
+if (in_array($action, IMPORT_ACTIONS, true)) { require APP_ROOT . '/app/actions_import.php'; exit; }
 // Everything below works on the current vehicle; a new account has none until it adds one.
 if (!vid() && !in_array($action, ['vehicle_add', 'logout', 'set_password', 'mechanic_save', 'mechanic_delete', 'link_save', 'link_delete', 'account_password', 'account_delete', 'remind_set', 'mode_set', 'guest_keep', 'guest_end', 'diag_run', 'diag_delete', 'diag_to_vehicle', 'customer_save', 'customer_delete', 'customer_vehicle_add', 'tool_save', 'tool_preset', 'tool_delete', 'job_new', 'job_save', 'line_add', 'line_save', 'line_delete', 'group_action', 'canned_add', 'job_auth', 'job_stage', 'job_link', 'payment_add', 'payment_delete', 'job_copy', 'job_delete', 'inspect_start', 'inspect_save', 'shop_save', 'canned_save', 'canned_delete', 'catalog_save', 'catalog_delete', 'catalog_import'], true)) { flash('Add a vehicle first.', 'err'); redirect(url('garage') . '#add'); }
 
@@ -298,11 +300,23 @@ case 'maint_save':
     if ($id) update('maintenance', $data, $id); else insert('maintenance', $data);
     flash('Maintenance item saved.'); redirect(url('maintenance'));
 
+case 'severe_set':
+    update('vehicle', ['severe' => post('severe') === '1' ? 1 : 0], vid());
+    flash(post('severe') === '1' ? 'Set to severe driving: services now come about 40% sooner.' : 'Set to normal driving.'); redirect(url('maintenance'));
+
+case 'maint_flag':
+    if (!col('SELECT 1 FROM maintenance WHERE id=? AND ' . vw(), [(int)$id])) { http_response_code(404); exit('Not found'); }
+    $w = post('what');
+    if ($w === 'snooze') update('maintenance', ['snooze_until' => date('Y-m-d', strtotime('+30 days'))], (int)$id);
+    elseif ($w === 'mute') update('maintenance', ['muted' => 1], (int)$id);
+    else update('maintenance', ['muted' => 0, 'snooze_until' => null], (int)$id);
+    flash(['snooze' => 'OK, it will remind you again in a month.', 'mute' => 'Reminders off for this item.'][$w] ?? 'Reminders back on.'); redirect(url('maintenance'));
+
 case 'maint_done':
     $m = row('SELECT * FROM maintenance WHERE id=?', [$id]);
     $doneOn = post('date') ?: today();
     // No mileage given for a past date: leave it unknown rather than stamping today's odometer on it.
-    update('maintenance', ['last_miles' => post_int('miles') ?? ($doneOn < today() ? null : current_miles()), 'last_date' => $doneOn, 'due_date' => null], $id);
+    update('maintenance', ['last_miles' => post_int('miles') ?? ($doneOn < today() ? null : current_miles()), 'last_date' => $doneOn, 'due_date' => null, 'snooze_until' => null], $id);
     flash('Marked done: ' . ($m['item'] ?? '')); redirect(url('maintenance'));
 
 case 'maint_delete':
@@ -569,6 +583,7 @@ case 'job_save':
     if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
     $d = [];
     foreach (['title', 'complaint', 'cause', 'correction', 'promised', 'notes_customer', 'notes_internal'] as $k) $d[$k] = post($k);
+    $d['parts_return'] = in_array(post('parts_return'), ['yes', 'no'], true) ? post('parts_return') : null;
     foreach (['odometer_in', 'odometer_out'] as $k) $d[$k] = post_int($k);
     foreach (['discount', 'labor_rate', 'tax_parts', 'tax_labor', 'supplies_pct', 'supplies_cap'] as $k) $d[$k] = post_float($k) ?? 0;
     $cid = post_int('customer_id') ?? 0; $d['customer_id'] = owns_row('customers', $cid) ? $cid : null;
@@ -590,7 +605,8 @@ case 'line_add':
     if (post('description') === '' && !$cat) { flash('Describe the line.', 'err'); redirect(url('job', ['id' => $jid]) . '#add'); }
     insert('job_lines', ['job_id' => $jid, 'grp' => post('grp') ?: 'General', 'kind' => $kind, 'description' => post('description') ?: (string)$cat['name'], 'part_no' => post('part_no') ?: (string)($cat['part_no'] ?? ''),
         'brand' => post('brand') ?: (string)($cat['brand'] ?? ''), 'supplier' => post('supplier') ?: (string)($cat['supplier'] ?? ''), 'qty' => post_float('qty') ?? 1, 'cost' => $cost, 'price' => $price,
-        'taxable' => post('taxable', '1') === '1' ? 1 : 0, 'status' => in_array($job['stage'], ['estimate', 'declined'], true) ? 'pending' : 'approved', 'pstatus' => 'quoted', 'catalog_id' => $cat['id'] ?? null,
+        'taxable' => post('taxable', '1') === '1' ? 1 : 0, 'status' => $kind === 'note' && !in_array($job['stage'], ['estimate', 'declined'], true) ? 'approved' : 'pending', 'pstatus' => 'quoted', 'catalog_id' => $cat['id'] ?? null,
+        'cond' => array_key_exists(post('cond'), PART_COND) ? post('cond') : 'new',
         'sort' => (int)col('SELECT COALESCE(MAX(sort),0)+1 FROM job_lines WHERE job_id=?', [$jid])]);
     job_refresh($jid);
     redirect(url('job', ['id' => $jid]) . '#g-' . rawurlencode(post('grp') ?: 'General'));
@@ -600,6 +616,7 @@ case 'line_save':
     $l = row('SELECT * FROM job_lines WHERE id=?', [$id]);
     $d = ['description' => post('description'), 'part_no' => post('part_no'), 'brand' => post('brand'), 'supplier' => post('supplier'), 'qty' => post_float('qty') ?? 1, 'cost' => post_float('cost') ?? 0,
         'price' => post_float('price') ?? 0, 'taxable' => post('taxable') === '1' ? 1 : 0];
+    if (array_key_exists(post('cond'), PART_COND)) $d['cond'] = post('cond');
     if (post('reprice') === '1' && $l['kind'] === 'part') $d['price'] = matrix_price((float)$d['cost']);
     if (array_key_exists(post('pstatus'), PART_STATUS)) $d['pstatus'] = post('pstatus');
     update('job_lines', $d, (int)$id);
@@ -747,7 +764,9 @@ case 'inspect_save':
 
 case 'shop_save':
     $d = [];
-    foreach (['name', 'address', 'phone', 'email', 'website', 'license', 'tax_id', 'currency', 'est_prefix', 'inv_prefix', 'po_prefix', 'warranty', 'est_terms', 'inv_terms'] as $k) $d[$k] = post($k);
+    foreach (['name', 'address', 'phone', 'email', 'website', 'license', 'tax_id', 'currency', 'est_prefix', 'inv_prefix', 'po_prefix', 'warranty', 'est_terms', 'inv_terms', 'epa_id'] as $k) $d[$k] = post($k);
+    $d['state'] = array_key_exists(post('state'), US_STATES) ? post('state') : ''; $d['show_cond'] = post('show_cond') === '1' ? 1 : 0;
+    $d['comeback_pay'] = array_key_exists(post('comeback_pay'), COMEBACK_PAY) ? post('comeback_pay') : 'unpaid'; $d['mm_line'] = post('mm_line') === '1' ? 1 : 0;
     foreach (['labor_rate', 'tax_parts', 'tax_labor', 'tax_fees', 'supplies_pct', 'supplies_cap', 'auth_threshold_pct', 'auth_threshold_amt'] as $k) $d[$k] = post_float($k) ?? 0;
     foreach (['next_est', 'next_inv', 'next_po'] as $k) if (post_int($k)) $d[$k] = post_int($k);
     $d['show_rates'] = post('show_rates') === '1' ? 1 : 0; $d['show_part_numbers'] = post('show_part_numbers') === '1' ? 1 : 0;
@@ -756,6 +775,31 @@ case 'shop_save':
     if ($m) { usort($m, fn($a, $b) => $a[0] <=> $b[0]); $d['matrix'] = $m; }
     shop_save($d);
     flash('Shop settings saved.'); redirect(url('shop'));
+
+case 'job_comeback':
+    // The car came back for the same work: a new repair order linked to the original, with the reason.
+    if (!owns_row('jobs', (int)$id)) { http_response_code(404); exit('Not found'); }
+    $o = row('SELECT * FROM jobs WHERE id=?', [$id]); $s = shop();
+    $reason = array_key_exists(post('reason'), COMEBACK_REASONS) ? post('reason') : 'other';
+    $nid = insert('jobs', ['user_id' => uid(), 'customer_id' => $o['customer_id'], 'vehicle_id' => $o['vehicle_id'], 'stage' => 'estimate', 'est_no' => next_number('est'),
+        'title' => 'Comeback: ' . ($o['title'] ?: $o['est_no']), 'complaint' => trim(post('complaint')) ?: COMEBACK_REASONS[$reason] . ' after ' . ($o['inv_no'] ? 'invoice ' . $o['inv_no'] : $o['est_no']) . '.',
+        'odometer_in' => post_int('odometer_in') ?? ($o['vehicle_id'] ? (int)col('SELECT mileage FROM vehicle WHERE id=?', [$o['vehicle_id']]) : null),
+        'labor_rate' => $s['labor_rate'], 'tax_parts' => $s['tax_parts'], 'tax_labor' => $s['tax_labor'], 'supplies_pct' => 0, 'supplies_cap' => 0, 'discount' => 0,
+        'comeback_of' => (int)$id, 'comeback_reason' => $reason, 'notes_customer' => 'Warranty work on ' . ($o['inv_no'] ? 'invoice ' . $o['inv_no'] : $o['est_no']) . ': no charge for covered parts and labor.', 'created_at' => now(), 'updated_at' => now()]);
+    flash('Comeback opened and linked to ' . ($o['inv_no'] ? 'invoice ' . $o['inv_no'] : $o['est_no']) . '. Add the work at no charge where the warranty covers it.');
+    redirect(url('job', ['id' => $nid]));
+
+case 'state_defaults':
+    // Taxes, shop supplies and the approval tolerance the shop's state expects (each shown on the settings page).
+    $S0 = shop(); [, $f] = shop_rules($S0); $d = [];
+    if ($f['labor_tax'] === false) $d['tax_labor'] = 0.0;
+    if ($f['labor_tax'] === true && (float)$S0['tax_labor'] <= 0) $d['tax_labor'] = (float)$S0['tax_parts'];
+    if ($f['supplies'] === false) $d['supplies_pct'] = 0.0;
+    if (($S0['state'] ?? '') === 'CA') { $d['auth_threshold_pct'] = 0.0; $d['auth_threshold_amt'] = 0.0; }
+    elseif (!empty($f['auth_pct'])) { $d['auth_threshold_pct'] = (float)$f['auth_pct']; $d['auth_threshold_amt'] = 0.0; }
+    if ($d) shop_save($d);
+    flash($d ? 'Applied your state\'s settings: ' . implode(', ', array_map(fn($k) => ['tax_labor' => 'labor tax', 'supplies_pct' => 'shop supplies', 'auth_threshold_pct' => 'approval limit', 'auth_threshold_amt' => ''][$k], array_keys($d))) . '.' : 'Nothing to change for your state.');
+    redirect(url('shop') . '#state');
 
 case 'canned_save':
     $cid = post_int('id') ?? 0;

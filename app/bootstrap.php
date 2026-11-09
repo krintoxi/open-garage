@@ -75,6 +75,9 @@ require APP_ROOT . '/app/verdict.php';
 require APP_ROOT . '/app/nhtsa.php';
 require APP_ROOT . '/app/followups.php';
 require APP_ROOT . '/app/authz.php';
+require APP_ROOT . '/app/compliance.php';
+require APP_ROOT . '/app/fairprice.php';
+require APP_ROOT . '/app/switching.php';
 
 function db(): PDO {
     static $pdo = null;
@@ -98,6 +101,10 @@ function db(): PDO {
     migrate_connect($pdo);
     migrate_followups($pdo);
     migrate_authz($pdo);
+    migrate_compliance($pdo);
+    migrate_comebacks($pdo);
+    migrate_switching($pdo);
+    migrate_driver_extras($pdo);
     $count = (int)$pdo->query('SELECT COUNT(*) FROM vehicle')->fetchColumn();
     if ($count === 0 && !$pdo->query("SELECT 1 FROM settings WHERE key='seeded'")->fetchColumn()) {
         $pdo->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('seeded', datetime('now'))");
@@ -350,6 +357,15 @@ const ISSUE_STATUSES = ['open','monitoring','scheduled','resolved','dismissed'];
 
 function maintenance_status(array $m, int $miles): array {
     // returns [state, due_miles, due_date, label]
+    if (!empty($m['muted'])) return ['muted', null, null, 'Reminders off'];
+    if (!empty($m['vehicle_id']) && vehicle_severe((int)$m['vehicle_id'])) {
+        if ($m['interval_miles']) $m['interval_miles'] = (int)round($m['interval_miles'] * SEVERE_FACTOR / 500) * 500 ?: (int)$m['interval_miles'];
+        if ($m['interval_months']) $m['interval_months'] = max(1, (int)round($m['interval_months'] * SEVERE_FACTOR));
+    }
+    if (!empty($m['snooze_until']) && $m['snooze_until'] > today()) {
+        $until = (string)$m['snooze_until']; $m['snooze_until'] = null; $r = maintenance_status($m, $miles);
+        return in_array($r[0], ['overdue', 'soon'], true) ? ['ok', $r[1], $r[2], 'Snoozed until ' . date('M j', strtotime($until)) . ' · ' . $r[3]] : $r;
+    }
     $dueM = ($m['interval_miles'] && $m['last_miles'] !== null) ? (int)$m['last_miles'] + (int)$m['interval_miles'] : null;
     $dueD = ($m['interval_months'] && $m['last_date']) ? date('Y-m-d', strtotime($m['last_date'] . ' +' . (int)$m['interval_months'] . ' months')) : null;
     // An explicit next-due date (e.g. from the dash service reminder) counts too; the earlier date wins.

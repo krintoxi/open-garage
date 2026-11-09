@@ -24,7 +24,7 @@ function shop_defaults(): array {
         // Tiered parts markup: [cost from, markup %]. Typical industry matrix: cheap parts carry a higher markup.
         'matrix' => [[0, 150], [5, 100], [25, 75], [75, 60], [150, 45], [300, 35], [750, 25]],
         'show_rates' => 1, 'show_part_numbers' => 1, 'est_prefix' => 'E-', 'inv_prefix' => '', 'next_est' => 1001, 'next_inv' => 1001,
-        'warranty' => '12 months / 12,000 miles on parts and labor, whichever comes first, unless stated otherwise.',
+        'warranty' => '24 months / 24,000 miles on parts and labor, whichever comes first, unless stated otherwise.',
         'est_terms' => 'This estimate is valid for 30 days. Prices for parts may change. Work beyond this estimate will not be done without your authorization.',
         'inv_terms' => 'Payment is due when the vehicle is picked up. Replaced parts are available on request unless returned for core credit or warranty.',
         'auth_threshold_pct' => 10.0, 'auth_threshold_amt' => 100.0,
@@ -33,6 +33,9 @@ function shop_defaults(): array {
         'slot_min' => 60, 'bays' => 2, 'book_on' => 0, 'book_token' => '', 'book_lead_hours' => 2, 'book_days' => 21, 'book_note' => '',
         // Purchase orders and card payments (Stripe Checkout on the shop's own account; key never shown back).
         'po_prefix' => 'PO-', 'next_po' => 1001, 'stripe_sk' => '', 'currency_code' => 'usd',
+        // State rules (app/compliance.php): which state's paperwork rules apply, EPA ID for disposal fees.
+        'state' => '', 'epa_id' => '', 'show_cond' => 0,
+        'comeback_pay' => 'unpaid', 'mm_line' => 1,
     ];
 }
 function shop(?int $userId = null): array {
@@ -193,7 +196,7 @@ function canned_jobs(): array {
 function job_add_canned(array $job, array $cj, ?string $group = null): void {
     $g = $group ?: $cj['name']; $s = shop();
     $sort = (int)col('SELECT COALESCE(MAX(sort),0) FROM job_lines WHERE job_id=?', [$job['id']]);
-    $status = in_array($job['stage'], ['estimate', 'declined'], true) ? 'pending' : 'approved';
+    $status = 'pending'; // added after approval too: the customer has to OK it (see app/authz.php)
     foreach (json_decode((string)$cj['lines'], true) ?: [] as $ln) {
         [$kind, $desc, $qty] = $ln + [2 => 1];
         $price = 0.0; $cost = (float)($ln[3] ?? 0);

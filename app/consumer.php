@@ -91,7 +91,8 @@ function recalls_refresh(int $vehId, bool $force = false): int {
     // Unreachable: try again in a day rather than on every page view.
     q('UPDATE vehicle SET recalls_checked=? WHERE id=?', [$list === null ? time() - 6 * 86400 : time(), $vehId]);
     if (!$list) return 0;
-    $new = 0;
+    $new = 0; $park = [];
+    $first = !col('SELECT 1 FROM recalls WHERE vehicle_id=?', [$vehId]);   // the first check of a vehicle lists old recalls: no email for those
     foreach ($list as $r) {
         $camp = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)($r['NHTSACampaignNumber'] ?? '')));
         if ($camp === '' || col('SELECT 1 FROM recalls WHERE vehicle_id=? AND campaign=?', [$vehId, $camp])) continue;
@@ -100,7 +101,14 @@ function recalls_refresh(int $vehId, bool $force = false): int {
             'summary' => (string)($r['Summary'] ?? ''), 'consequence' => (string)($r['Consequence'] ?? ''), 'remedy' => (string)($r['Remedy'] ?? ''),
             'report_date' => $d ? $d->format('Y-m-d') : null, 'park_it' => !empty($r['parkIt']) ? 1 : 0, 'status' => 'open', 'found_at' => now()]);
         $new++;
+        if (!empty($r['parkIt'])) $park[] = recall_component((string)($r['Component'] ?? ''));
     }
+    // A new "do not drive" recall is worth an email straight away (owner's own vehicles, verified accounts only).
+    if ($park && !$first && MULTI_USER && $v['customer_id'] === null && ($u = row('SELECT email, verified_at, is_guest FROM users WHERE id=?', [$v['user_id']])) && $u['verified_at'] && !$u['is_guest'])
+        send_mail((string)$u['email'], 'Do not drive your ' . vehicle_name($v) . ': new safety recall', '<div style="font:15px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:520px">'
+            . '<p><b>NHTSA just published a "do not drive" safety recall for your ' . h(vehicle_name($v)) . '</b> (' . h(implode('; ', $park)) . ').</p>'
+            . '<p>The manufacturer says these vehicles should not be driven until the repair is done. The repair is free at a dealer. Check whether your VIN is included and call a dealer to book it.</p>'
+            . '<p><a href="' . h(base_url() . '/' . url('recalls', ['v' => $vehId])) . '" style="background:#e10600;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">See the recall</a></p></div>');
     return $new;
 }
 /** "AIR BAGS:FRONTAL:PASSENGER SIDE:INFLATOR MODULE" -> "Air bags › Frontal › Passenger side › Inflator module". */
@@ -144,7 +152,8 @@ function reminder_digest(int $userId): array {
         if ($rc) $lines[] = $rc . ' safety recall' . ($rc === 1 ? '' : 's') . ' to check (free repair at a dealer)';
         foreach (rows("SELECT title, scheduled_on FROM visits WHERE vehicle_id=? AND status='planned' AND scheduled_on BETWEEN ? AND ?", [$vid, today(), date('Y-m-d', strtotime('+7 days'))]) as $vs)
             $lines[] = 'Mechanic visit ' . fmt_date($vs['scheduled_on']) . ': ' . $vs['title'];
-        if ($v['mileage_updated'] && -days_until((string)$v['mileage_updated']) > 30) $lines[] = 'Mileage not updated since ' . fmt_date($v['mileage_updated']) . ' (countdowns may be off)';
+        if (($est = miles_estimate($v)) && $est[1] >= 14) $lines[] = 'Is your odometer about ' . number_format($est[0]) . ' mi? Update it so service reminders stay right.';
+        elseif ($v['mileage_updated'] && -days_until((string)$v['mileage_updated']) > 30) $lines[] = 'Mileage not updated since ' . fmt_date($v['mileage_updated']) . ' (countdowns may be off)';
         if ($lines) $out[] = [trim(($v['nickname'] ? $v['nickname'] . ' · ' : '') . vehicle_name($v)), $lines];
     }
     return $out;
@@ -166,4 +175,42 @@ function unsub_token_for(int $userId): string {
     $t = (string)col('SELECT unsub_token FROM users WHERE id=?', [$userId]);
     if (!preg_match('/^[a-f0-9]{32}$/D', $t)) { $t = bin2hex(random_bytes(16)); q('UPDATE users SET unsub_token=? WHERE id=?', [$t, $userId]); }
     return $t;
+}
+
+/* ---------- Driver extras (2026-11-08, roadmap #12) ---------- */
+
+function migrate_driver_extras(PDO $pdo): void {
+    $cols = fn(string $t) => array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
+    if (!in_array('severe', $cols('vehicle'), true)) $pdo->exec('ALTER TABLE vehicle ADD COLUMN severe INT DEFAULT 0');
+    $mc = $cols('maintenance');
+    foreach (['muted' => 'INT DEFAULT 0', 'snooze_until' => 'TEXT', 'source' => 'TEXT'] as $c => $t) if (!in_array($c, $mc, true)) $pdo->exec("ALTER TABLE maintenance ADD COLUMN $c $t");
+}
+/** Severe service ("short trips, towing, dust, heat, stop-and-go") shortens time and mileage intervals to 60%. */
+const SEVERE_FACTOR = 0.6;
+function vehicle_severe(int $vehId): bool { static $c = []; return $c[$vehId] ??= (bool)col('SELECT severe FROM vehicle WHERE id=?', [$vehId]); }
+
+/** Miles a day from the mileage log (last 6 months), or null when there is not enough to tell. */
+function miles_per_day(int $vehId): ?float {
+    $log = rows('SELECT logged_at, miles FROM mileage_log WHERE vehicle_id=? AND logged_at >= ? ORDER BY logged_at, id', [$vehId, date('Y-m-d', strtotime('-180 days'))]);
+    if (count($log) < 2) return null;
+    $d = (strtotime((string)end($log)['logged_at']) - strtotime((string)$log[0]['logged_at'])) / 86400;
+    $m = (int)end($log)['miles'] - (int)$log[0]['miles'];
+    return $d >= 7 && $m > 0 ? $m / $d : null;
+}
+/** A guess at today's odometer when the last reading is 10+ days old: [miles, days since] or null. */
+function miles_estimate(array $v): ?array {
+    if (!$v['mileage_updated'] || ($days = -days_until((string)$v['mileage_updated'])) < 10) return null;
+    $r = miles_per_day((int)$v['id']); if ($r === null) return null;
+    return [(int)(round(((int)$v['mileage'] + $r * $days) / 50) * 50), $days];
+}
+/** Weekly-check streak in weeks, forgiving: one missed week does not break it. */
+function check_streak(int $vehId): int {
+    $weeks = array_flip(array_map(fn($d) => date('o-W', strtotime((string)$d)), array_column(rows('SELECT done_on FROM inspections WHERE vehicle_id=? AND done_on >= ?', [$vehId, date('Y-m-d', strtotime('-1 year'))]), 'done_on')));
+    $n = 0; $miss = 0; $t = time();
+    if (!isset($weeks[date('o-W', $t)])) $t -= 7 * 86400;      // this week not done yet: count from last week
+    for ($i = 0; $i < 53; $i++, $t -= 7 * 86400) {
+        if (isset($weeks[date('o-W', $t)])) { $n++; $miss = 0; continue; }
+        if (++$miss > 1) break;
+    }
+    return $n;
 }

@@ -49,6 +49,10 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
 <?php if ($job['approved_at'] && $job['approved_by'] && strtotime((string)$job['approved_at']) > time() - 86400 * 2): ?><div class="flash">Approved by <?= h($job['approved_by']) ?> on <?= h(date('M j, g:i a', strtotime((string)$job['approved_at']))) ?><?= $job['approve_note'] ? ': “' . h($job['approve_note']) . '”' : '' ?>.</div><?php endif; ?>
 <?php if ($appt): ?><p class="muted" style="margin:-6px 0 12px">Appointment <?= h(date('D M j, g:i a', strtotime((string)$appt['starts_at']))) ?> · <a href="<?= url('calendar', ['d' => substr((string)$appt['starts_at'], 0, 10), 'a' => $appt['id']]) ?>">open</a></p><?php endif; ?>
 <?php if ($toOrder): ?><a class="flash" style="display:block" href="<?= url('purchasing', ['job' => $jid]) ?>">⇩ <?= $toOrder ?> approved part<?= $toOrder === 1 ? '' : 's' ?> still to order. Create a purchase order →</a><?php endif; ?>
+<?php if ($job['comeback_of'] && ($OJ = row('SELECT id, est_no, inv_no FROM jobs WHERE id=? AND user_id=?', [$job['comeback_of'], uid()]))): ?>
+<div class="ho-banner cb-banner"><span class="ho-ico">↩</span><div class="grow"><b>Comeback of <a href="<?= url('job', ['id' => $OJ['id']]) ?>"><?= h($OJ['inv_no'] ? 'invoice ' . $OJ['inv_no'] : $OJ['est_no']) ?></a></b><small><?= h(COMEBACK_REASONS[$job['comeback_reason']] ?? '') ?>. Counted in your comeback rate<?= (shop()['comeback_pay'] ?? 'unpaid') === 'unpaid' ? '; flat-rate hours on this job are not paid again' : '' ?>.</small></div></div>
+<?php endif; ?>
+<?php $CB = rows('SELECT id, est_no, created_at, comeback_reason FROM jobs WHERE comeback_of=? AND user_id=?', [$jid, uid()]); if ($CB): ?><p class="muted" style="margin:-6px 0 12px">↩ Came back: <?php foreach ($CB as $c): ?><a href="<?= url('job', ['id' => $c['id']]) ?>"><?= h($c['est_no']) ?></a> (<?= h(date('M j', strtotime((string)$c['created_at']))) ?>, <?= h(strtolower(COMEBACK_REASONS[$c['comeback_reason']] ?? '')) ?>) <?php endforeach; ?></p><?php endif; ?>
 <?php $HO = $job['handoff_id'] ? row('SELECT * FROM handoffs WHERE id=? AND revoked=0', [$job['handoff_id']]) : null; if ($HO): ?>
 <div class="ho-banner"><span class="ho-ico">📲</span><div class="grow"><b>From <?= h($HO['contact_name'] ?: 'the customer') ?>'s <?= h(APP_NAME) ?> report</b>
   <small><?= $HO['allow_return'] ? ($HO['returned_at'] ? '✓ Finished work sent to their garage ' . h(date('M j', strtotime((string)$HO['returned_at']))) . '.' : 'When you invoice, the work and any declined recommendations go back to their garage, marked verified by your shop.') : 'They chose not to receive the record back.' ?></small></div>
@@ -61,6 +65,11 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
   <ul><?php foreach ($FU as $g): ?><li><?= h($g['grp']) ?><?= $g['amount'] > 0 ? ' · ' . money($g['amount']) : '' ?> <span class="muted">(<?= h($g['est_no']) ?>)</span></li><?php endforeach; ?></ul></div>
   <form method="post"><input type="hidden" name="action" value="fu_book"><?= $csrf ?><input type="hidden" name="ids" value="<?= h(implode(',', array_merge(...array_column($FU, 'ids')))) ?>"><input type="hidden" name="into" value="<?= $jid ?>"><button class="sm">Add to this estimate</button></form></div>
 <?php endif; endif; ?>
+<?php if ($job['vehicle_id']): ?><?php $LG = rows('SELECT l.*, v.year vy, v.make vm, v.model vmo FROM legacy_ros l LEFT JOIN vehicle v ON v.id=l.vehicle_id WHERE l.user_id=? AND l.vehicle_id=? ORDER BY l.ro_date DESC, l.id DESC LIMIT 200', [uid(), $job['vehicle_id']]); if ($LG): ?>
+<details class="legacy"><summary><b>Past work from your old system</b> <span class="muted"><?= count($LG) ?></span></summary>
+  <ul class="list"><?php foreach ($LG as $x): ?><li><div class="grow"><span class="t"><?= h($x['ro_date'] ? date('M j, Y', strtotime((string)$x['ro_date'])) : 'No date') ?><?= $x['ro_no'] ? ' · #' . h($x['ro_no']) : '' ?><?= $x['vm'] ? ' · ' . h(trim($x['vy'] . ' ' . $x['vm'] . ' ' . $x['vmo'])) : '' ?></span><small><?= h(mb_strimwidth((string)$x['description'], 0, 220, '…')) ?><?= $x['miles'] ? ' · ' . number_format((int)$x['miles']) . ' mi' : '' ?></small></div><?= $x['total'] !== null ? '<b>' . money((float)$x['total']) . '</b>' : '' ?></li><?php endforeach; ?></ul>
+  <small class="muted">Imported from <?= h((string)$LG[0]['source']) ?>. Read-only.</small></details>
+<?php endif; ?><?php endif; ?>
 <?php $added = job_added_pending($job); if (($added || $auth['over']) && !$est): $pct = $auth['authorized'] > 0 ? round(($auth['current'] - $auth['authorized']) / $auth['authorized'] * 100) : null; ?>
 <div class="auth-alert"><span class="ho-ico">✋</span><div class="grow"><b><?= $added ? 'Added work needs the customer\'s OK' : 'Total is over what the customer approved' ?></b>
   <small><?= $auth['authorized'] > 0 ? 'Approved ' . money($auth['authorized']) . ', now ' . money($auth['current']) . ($pct !== null && $pct > 0 ? ' (+' . $pct . '%)' : '') . '. ' : '' ?><?= $added ? h(implode(', ', $added)) . ' cannot be finished or invoiced until they approve it. ' : '' ?>Send the updated estimate, or record their approval by phone, text, email or in person.</small></div>
@@ -81,7 +90,7 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
       <div class="form-grid">
         <div class="full"><label>Cause (what you found)</label><textarea name="cause" rows="2"><?= h($job['cause']) ?></textarea></div>
         <div class="full"><label>Correction (what was done)</label><textarea name="correction" rows="2"><?= h($job['correction']) ?></textarea></div>
-        <div><label>Promised</label><input type="text" name="promised" value="<?= h($job['promised']) ?>" placeholder="e.g. Fri 5 pm"></div><div></div>
+        <div><label>Promised</label><input type="text" name="promised" value="<?= h($job['promised']) ?>" placeholder="e.g. Fri 5 pm"></div><div><label>Replaced parts</label><select name="parts_return"><option value="">Not asked yet</option><option value="yes" <?= $job['parts_return'] === 'yes' ? 'selected' : '' ?>>Customer wants them back</option><option value="no" <?= $job['parts_return'] === 'no' ? 'selected' : '' ?>>Customer does not want them</option></select></div>
         <div class="full"><label>Note to customer (prints on estimate/invoice)</label><textarea name="notes_customer" rows="2"><?= h($job['notes_customer']) ?></textarea></div>
         <div class="full"><label>Internal note (never shown)</label><textarea name="notes_internal" rows="2"><?= h($job['notes_internal']) ?></textarea></div>
       </div></details>
@@ -121,6 +130,7 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
             <div class="form-grid">
               <div class="full"><label>Description</label><input type="text" name="description" value="<?= h($l['description']) ?>"></div>
               <?php if (in_array($l['kind'], ['part', 'core', 'sublet'], true)): ?><div><label>Part number</label><input type="text" name="part_no" value="<?= h($l['part_no']) ?>"></div><div><label>Brand</label><input type="text" name="brand" value="<?= h($l['brand']) ?>"></div><div><label>Supplier / vendor</label><input type="text" name="supplier" value="<?= h($l['supplier']) ?>"></div>
+                <?php if ($l['kind'] === 'part'): ?><div><label>Condition</label><select name="cond"><?php foreach (PART_COND as $k => $lb): ?><option value="<?= $k ?>" <?= ($l['cond'] ?: 'new') === $k ? 'selected' : '' ?>><?= h($lb) ?></option><?php endforeach; ?></select></div><?php endif; ?>
                 <div><label>Status</label><select name="pstatus"><?php foreach (PART_STATUS as $k => $lb): ?><option value="<?= $k ?>" <?= $l['pstatus'] === $k ? 'selected' : '' ?>><?= h($lb) ?></option><?php endforeach; ?></select></div><?php else: ?><input type="hidden" name="part_no" value=""><input type="hidden" name="brand" value=""><input type="hidden" name="supplier" value=""><?php endif; ?>
               <div><label><?= $l['kind'] === 'labor' ? 'Hours' : 'Quantity' ?></label><input type="number" step="0.01" name="qty" value="<?= h((string)(float)$l['qty']) ?>"></div>
               <?php if ($l['kind'] !== 'labor'): ?><div><label>Your cost (each)</label><input type="number" step="0.01" name="cost" value="<?= h((string)(float)$l['cost']) ?>"></div><?php else: ?><input type="hidden" name="cost" value="0"><?php endif; ?>
@@ -257,6 +267,15 @@ $toOrder = in_array($job['stage'], ['approved', 'in_progress', 'waiting_parts'],
           <button class="primary sm" style="margin-top:8px">Record approval</button></form></details>
     </div>
 
+    <?php if (in_array($job['stage'], ['invoiced', 'paid'], true) && !$job['comeback_of']): ?>
+    <details class="card cb-form" style="margin-top:14px"><summary><b>↩ The car came back for this?</b></summary>
+      <form method="post" style="margin-top:8px"><input type="hidden" name="action" value="job_comeback"><?= $csrf ?><input type="hidden" name="id" value="<?= $jid ?>">
+        <label>What happened?</label><select name="reason"><?php foreach (COMEBACK_REASONS as $k => $lb): ?><option value="<?= $k ?>"><?= h($lb) ?></option><?php endforeach; ?></select>
+        <label>In the customer's words (optional)</label><input type="text" name="complaint" placeholder="e.g. Same squeal is back">
+        <label>Odometer now</label><input type="number" name="odometer_in" inputmode="numeric">
+        <button class="sm primary" style="margin-top:8px">Open a linked comeback</button>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">Tracked as rework: it counts in your comeback rate and stays linked to this job and its technician.</p></form></details>
+    <?php endif; ?>
     <div class="card" id="pay" style="margin-top:14px">
       <h2>Payments</h2>
       <?php if (!$pays): ?><p class="muted" style="font-size:13px">No payments yet<?= in_array($job['stage'], ['estimate', 'approved'], true) ? ' (deposits can be recorded here)' : '' ?>.</p><?php endif; ?>

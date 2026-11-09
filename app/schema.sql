@@ -79,3 +79,6 @@ CREATE TABLE IF NOT EXISTS handoffs (id INTEGER PRIMARY KEY, user_id INTEGER NOT
   issue_ids TEXT, photo_ids TEXT, codes TEXT, diag_id INT, show_history INT DEFAULT 1, allow_return INT DEFAULT 1, created_at TEXT, views INT DEFAULT 0, opened_at TEXT,
   shop_user_id INT, shop_name TEXT, job_id INT, imported_at TEXT, returned_at TEXT, visit_id INT, revoked INT DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_handoffs_veh ON handoffs (vehicle_id);
+-- Cores and part returns the shop is owed credit for (2026-11-08).
+CREATE TABLE IF NOT EXISTS part_returns (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, kind TEXT DEFAULT 'core', description TEXT, part_no TEXT, vendor_id INT, vendor TEXT,
+  job_id INT, job_line_id INT UNIQUE, amount REAL DEFAULT 0, status TEXT DEFAULT 'open', due_on TEXT, sent_on TEXT, credited_on TEXT, credit_ref TEXT, note TEXT, created_at TEXT);

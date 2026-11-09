@@ -18,7 +18,21 @@ $i = fn(string $k) => h((string)$S[$k]);
       <div><label>Shop name</label><input type="text" name="name" value="<?= $i('name') ?>"></div><div><label>Phone</label><input type="tel" name="phone" value="<?= $i('phone') ?>"></div>
       <div class="full"><label>Address</label><input type="text" name="address" value="<?= $i('address') ?>"></div>
       <div><label>Email</label><input type="email" name="email" value="<?= $i('email') ?>"></div><div><label>Website</label><input type="text" name="website" value="<?= $i('website') ?>"></div>
-      <div><label>Repair dealer / license no.</label><input type="text" name="license" value="<?= $i('license') ?>" placeholder="e.g. BAR ARD #"></div><div><label>Tax ID</label><input type="text" name="tax_id" value="<?= $i('tax_id') ?>"></div>
+      <div><label><?= h(shop_reg_label($S)) ?></label><input type="text" name="license" value="<?= $i('license') ?>" placeholder="printed on estimates and invoices"></div><div><label>Tax ID</label><input type="text" name="tax_id" value="<?= $i('tax_id') ?>"></div>
+    </div>
+    <h2 style="margin-top:18px" id="state">Your state's rules</h2>
+    <?php [$rules, $rf] = shop_rules($S); $warn = shop_rule_warnings($S); ?>
+    <div class="form-grid">
+      <div><label>State</label><select name="state"><option value="">Not set</option><?php foreach (US_STATES as $code => $nm): ?><option value="<?= $code ?>" <?= ($S['state'] ?? '') === $code ? 'selected' : '' ?>><?= h(ucwords(strtolower($nm))) ?></option><?php endforeach; ?></select></div>
+      <div><label>EPA ID number</label><input type="text" name="epa_id" value="<?= $i('epa_id') ?>" placeholder="printed next to disposal fees"></div>
+      <?php if (!isset(STATE_RULES[$S['state'] ?? ''])): ?><div class="full"><label class="inline"><input type="checkbox" name="show_cond" value="1" <?= !empty($S['show_cond']) ? 'checked' : '' ?>> Print each part's condition (new, used, rebuilt) on customer documents</label></div><?php endif; ?>
+    </div>
+    <div class="state-rules">
+      <b><?= isset(STATE_RULES[$S['state'] ?? '']) ? 'In ' . h(ucwords(strtolower(US_STATES[$S['state']]))) . ', the app takes care of:' : 'Good practice everywhere (pick your state for its own rules):' ?></b>
+      <ul><?php foreach ($rules as $r): ?><li><?= h($r) ?></li><?php endforeach; ?></ul>
+      <?php foreach ($warn as $w): ?><p class="state-warn">⚠️ <?= h($w) ?></p><?php endforeach; ?>
+      <?php if (isset(STATE_RULES[$S['state'] ?? ''])): ?><button class="sm" form="state-defaults">Apply my state's tax, supplies and approval settings</button><?php endif; ?>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">A summary to help, not legal advice. Your state's repair agency has the final word.</p>
     </div>
     <h2 style="margin-top:18px">Rates and taxes</h2>
     <div class="form-grid">
@@ -41,6 +55,8 @@ $i = fn(string $k) => h((string)$S[$k]);
       <div><label>Extra authorization needed above (%)</label><input type="number" step="0.1" name="auth_threshold_pct" value="<?= $i('auth_threshold_pct') ?>"></div><div><label>…or above (amount)</label><input type="number" step="0.01" name="auth_threshold_amt" value="<?= $i('auth_threshold_amt') ?>"></div>
       <div class="full"><small class="muted">The repair order warns when the total goes over what the customer authorized (California, for example: more than 10% or $100 over the written estimate needs documented additional authorization). Check your local rules.</small></div>
       <div class="full"><label>Warranty statement</label><textarea name="warranty" rows="2"><?= h($S['warranty']) ?></textarea></div>
+      <div class="full"><label class="inline"><input type="checkbox" name="mm_line" value="1" <?= !empty($S['mm_line']) ? 'checked' : '' ?>> Print on invoices: having the work done here does not void the vehicle's factory warranty (Magnuson-Moss Warranty Act)</label></div>
+      <div><label>Comebacks: flat-rate hours on rework are</label><select name="comeback_pay"><?php foreach (COMEBACK_PAY as $k => $lb): ?><option value="<?= $k ?>" <?= ($S['comeback_pay'] ?? 'unpaid') === $k ? 'selected' : '' ?>><?= h($lb) ?></option><?php endforeach; ?></select></div><div></div>
       <div class="full"><label>Estimate terms</label><textarea name="est_terms" rows="2"><?= h($S['est_terms']) ?></textarea></div>
       <div class="full"><label>Invoice terms</label><textarea name="inv_terms" rows="2"><?= h($S['inv_terms']) ?></textarea></div>
     </div>
@@ -80,6 +96,7 @@ $i = fn(string $k) => h((string)$S[$k]);
       <label class="inline"><input type="checkbox" name="new_link" value="1"> Replace the link (the old one stops working)</label><?php endif; ?>
     <div class="row end" style="margin-top:10px"><button class="primary">Save hours and booking</button></div>
   </form>
+  <form method="post" id="state-defaults" hidden><input type="hidden" name="action" value="state_defaults"><input type="hidden" name="_csrf" value="<?= csrf() ?>"></form>
   <div class="card" id="cards">
     <h2>Card payments</h2>
     <p class="muted" style="font-size:13.5px">Customers pay their invoice by card (Apple Pay and Google Pay too) from the link you send them, through <b>your own Stripe account</b>: the money goes straight to you, Stripe's fees apply, and each payment is recorded on the repair order automatically.</p>

@@ -82,6 +82,7 @@ $dl = fn(int $ts) => date('Y-m-d\TH:i', $ts);
           <div><label>Color</label><input type="color" name="color" value="<?= h($et['color'] ?? TECH_COLORS[count($all) % count(TECH_COLORS)]) ?>"></div>
           <div class="full"><label>Pay</label><select name="pay_type"><?php foreach (PAY_TYPES as $k => $l): ?><option value="<?= $k ?>" <?= ($et['pay_type'] ?? 'hourly') === $k ? 'selected' : '' ?>><?= h($l) ?></option><?php endforeach; ?></select></div>
           <div><label>Rate per hour</label><input type="number" step="0.01" name="pay_rate" value="<?= h((string)($et['pay_rate'] ?? '')) ?>"></div>
+          <div><label>Certification no. (ASE / state)</label><input type="text" name="cert_no" maxlength="40" value="<?= h((string)($et['cert_no'] ?? '')) ?>" placeholder="printed on invoices where required"></div>
           <div><label><?= !empty($et['pin_hash']) ? 'New PIN' : 'Clock PIN' ?></label><input type="password" name="pin" inputmode="numeric" pattern="\d{4,8}" placeholder="4–8 digits" autocomplete="new-password"></div></div>
         <?php if (!empty($et['pin_hash'])): ?><label class="inline"><input type="checkbox" name="clear_pin" value="1"> Remove PIN</label><?php endif; ?>
         <input type="hidden" name="active" value="0"><label class="inline"><input type="checkbox" name="active" value="1" <?= ($et['active'] ?? 1) ? 'checked' : '' ?>> Active</label>
